@@ -1,0 +1,17 @@
+# Normalize line endings: store LF in the repo and check out LF on every
+# platform, so the "LF will be replaced by CRLF" warnings stop.
+* text=auto eol=lf
+
+# Windows batch scripts are happier with CRLF in the working tree.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files — never apply line-ending conversion.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.tar  binary
+*.zip  binary
+*.db   binary
