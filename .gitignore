@@ -1,0 +1,21 @@
+# --- Yelp Open Dataset: academic-use-only, do NOT commit ---------------------
+# The raw dataset (13 GB) and everything derived from it. Regenerate locally via
+# YelpData/scripts/ once you have the dataset. See YelpData/README.md.
+YelpData/source/
+YelpData/output/
+YelpData/logs/
+YelpData/docs/
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# --- Local dev databases -----------------------------------------------------
+*.db
+
+# --- Claude Code personal/local overrides (shareable config is settings.json) -
+.claude/settings.local.json

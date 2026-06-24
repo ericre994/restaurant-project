@@ -1,0 +1,31 @@
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\docs
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\logs
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\organize.bat
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\organize_listing.txt
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\output
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\README.md
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\scripts
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\source
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\docs\Dataset_User_Agreement.pdf
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\docs\Yelp Dataset Documentation & ToS copy.pdf
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\logs\csv_output.txt
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\logs\normalize_output.txt
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\logs\run_output.txt
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\output\restaurants_Philadelphia_schema.csv
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\output\restaurants_Philadelphia_schema.json
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\output\restaurants_Philadelphia_schema.ndjson
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\output\restaurants_seed_Philadelphia.json
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\output\restaurants_seed_Philadelphia.sql
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\scripts\convert_to_csv.py
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\scripts\extract_and_prepare_yelp.py
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\scripts\normalize_to_schema.py
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\scripts\run_csv.bat
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\scripts\run_normalize.bat
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\scripts\run_philadelphia.bat
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\source\yelp_academic_dataset_business.json
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\source\yelp_academic_dataset_checkin.json
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\source\yelp_academic_dataset_review.json
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\source\yelp_academic_dataset_tip.json
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\source\yelp_academic_dataset_user.json
+C:\Users\Eric Li\Claude\Projects\Restaurant Project\YelpData\source\yelp_dataset.tar
+DONE_SENTINEL 
