@@ -2,10 +2,10 @@
 
 ## Restaurant Discovery & Management App
 
-**Version:** 0.1 (Draft)
+**Version:** 0.2 (Draft)
 **Author:** Eric
-**Last updated:** June 12, 2026
-**Status:** In review
+**Last updated:** June 24, 2026
+**Status:** In review — MVP slice partially implemented
 
 ---
 
@@ -27,6 +27,21 @@ There is no single product that closes the loop from *intent* (want to try) → 
 ### 1.3 Product vision
 
 Be the system of record for a user's dining life: a place where saved intent compounds into a taste profile, and that taste profile powers recommendations that feel like they came from a friend who knows you, then gets you a table.
+
+### 1.4 Implementation status (June 24, 2026)
+
+An early backend slice is built (FastAPI; see the Technical Design Doc's Implementation status). This tracks MVP feature progress; targets and metrics below are unchanged.
+
+| Feature | Status |
+| ------- | ------ |
+| List management — want-to-try / visited / custom, tags, source, visit sentiment (§4.1) | **Built** (backend) |
+| AI natural-language recommendations + reliability guards (§4.2) | **Built** (backend; LLM path validated offline, real API not yet exercised) |
+| Taste profile from visits + feedback (§4.2) | **Built** (backend) |
+| Reservation availability alerts (§4.3) | Not started |
+| Reservation deep-linking (§4.4) | Not started |
+| Weekly recap / newsletter (§4.5) | Not started |
+
+Caveats: data is the academic-use-only Yelp Open Dataset (Philadelphia, **no NYC coverage**) for dev only; no client app yet; persistence is dev SQLite modeling the planned Postgres schema.
 
 ---
 
