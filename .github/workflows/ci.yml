@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Match the project's runtime (see CLAUDE.md): code is written to be
+          # Python 3.9-safe, so CI runs 3.9 to catch regressions of that contract.
+          python-version: '3.9'
+
+      - name: Check line endings (.gitattributes policy)
+        run: |
+          violations=$(git ls-files --eol | grep -E '^i/crlf' || true)
+          if [ -n "$violations" ]; then
+            echo "Files stored with CRLF in the index (should be LF per .gitattributes):"
+            echo "$violations"
+            echo "Fix with: git add --renormalize . && git commit"
+            exit 1
+          fi
+          echo "Line endings OK (no CRLF in the index)."
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run tests (fallback mode)
+        working-directory: backend
+        run: pytest -q
+
+      - name: Run tests (FAKE_LLM mode)
+        working-directory: backend
+        env:
+          FAKE_LLM: '1'
+        run: pytest -q
