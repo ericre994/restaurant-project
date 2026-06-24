@@ -3,12 +3,12 @@
 
 |                  |                                                                                                  |
 | ---------------- | ------------------------------------------------------------------------------------------------ |
-| **Status**       | Draft for review                                                                                 |
+| **Status**       | Draft — MVP slice partially implemented                                                          |
 | **Author**       | Eric                                                                                             |
-| **Version**      | 0.1                                                                                              |
-| **Last updated** | June 17, 2026                                                                                    |
+| **Version**      | 0.2                                                                                              |
+| **Last updated** | June 24, 2026                                                                                    |
 | **Reviewers**    | *TBD*                                                                                            |
-| **Related docs** | PRD, Cost & Unit Economics Model, API ToS Review, Privacy & Data Handling Notes, Product Roadmap |
+| **Related docs** | PRD, Cost & Unit Economics Model, API ToS Review, Privacy & Data Handling Notes, Product Roadmap, Git/CI Setup |
 
 
 ---
@@ -20,6 +20,27 @@ This document describes the technical design for an app that helps people discov
 The MVP scope is: natural-language recommendations, want-to-try / visited list management, and reservation availability alerts. A social layer and direct reservation-API partnerships are deliberately out of scope for the MVP and are deferred to later phases to avoid scope creep.
 
 The central technical bet is the **recommendation pipeline**: rather than asking an LLM to search the world, the system pre-filters a small candidate set (15–20 restaurants) from a structured data source, then uses the LLM purely for ranking, scoring, and explanation. This keeps cost and latency bounded and predictable while still delivering the "it understands what I want" experience.
+
+### Implementation status (June 24, 2026)
+
+A first vertical slice is implemented in `backend/` (FastAPI + SQLAlchemy) on top of the `prototype/` recommendation pipeline. The design below remains the target; this box records current reality and where it defers or stands in.
+
+**Built**
+
+- **List management** (§5.1): want-to-try / visited / custom lists, list items, visits. Recording a visit reconciles the core lists (moves the restaurant from Want-to-Try to Visited).
+- **Recommendation pipeline** behind `POST /recommendations`, reusing `prototype/recommend.py` as the single source of truth for ranking/render. Stage 1 retrieval runs in SQL (price + geo bounding box + cuisine + rating pre-rank). The hallucination guard, one-shot repair retry, and rating-sorted fallback are implemented and tested.
+- **Feedback loop** (§4.5): every recommendation writes a `recommendation_logs` row; `POST /recommendations/{id}/feedback` records per-item actions.
+- **Taste profiles** (§4.5): `taste_profiles` is aggregated from visits + feedback; `derived_summary` is LLM-generated with a deterministic template fallback. Read by the pipeline per request (`GET/PUT /me/taste-profile`).
+
+**Schema deltas folded into §5.1**: `list_items.tags`, `list_items.source`, `visits.sentiment` (required by PRD §4.1); plus dev-only derived columns on `restaurants` (`latitude`, `longitude`, `categories_text`) for SQLite indexing.
+
+**Deferred / dev stand-ins** (consistent with the open questions in §9)
+
+- **Persistence**: SQLite for dev, modeling the Postgres schema; no Alembic migrations or pgvector yet. `embedding` stays null (model + dimension `N` TBD).
+- **Auth**: a dev stub (`X-User-Id` header) stands in for the identity provider.
+- **Observability**: `recommendation_logs.token_usage` / `cost_estimate` are null — the prototype's LLM call doesn't yet surface usage.
+- **Not started**: reservations (§4.3), availability alerts (§4.4), the weekly recap (PRD §4.5), and a *periodic* taste-recompute job (refresh runs inline on each visit/feedback for now).
+- **Testing**: an offline `FAKE_LLM` mode exercises the LLM / repair / fallback branches without an API key (§7.4); CI runs the suite on every push/PR.
 
 ### Assumptions to confirm
 
@@ -227,6 +248,8 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | embedding              | vector(N)        | restaurant embedding      |
 | raw                    | jsonb            | raw provider payload      |
 | cached_at / expires_at | timestamptz      | TTL for refresh           |
+| latitude / longitude   | double           | *(dev)* derived from `location`; B-tree indexed for the SQLite geo bounding-box query |
+| categories_text        | text             | *(dev)* lowercased, comma-joined categories for cuisine `LIKE` matching |
 |                        |                  | UNIQUE(source, source_id) |
 
 
@@ -251,6 +274,8 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | list_id       | uuid FK → lists       |                                |
 | restaurant_id | uuid FK → restaurants |                                |
 | note          | text                  |                                |
+| tags          | jsonb                 | cuisine / neighborhood / occasion tags (PRD §4.1) |
+| source        | text                  | attribution: "saved from a friend", "saw on Instagram" |
 | added_at      | timestamptz           |                                |
 |               |                       | UNIQUE(list_id, restaurant_id) |
 
@@ -264,6 +289,7 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | user_id       | uuid FK → users       |                       |
 | restaurant_id | uuid FK → restaurants |                       |
 | visited_at    | timestamptz           |                       |
+| sentiment     | text                  | 1-tap `loved` / `liked` / `wouldnt_return` (PRD §4.1; highest taste signal) |
 | user_rating   | int                   | the user's own rating |
 | notes         | text                  |                       |
 | created_at    | timestamptz           |                       |
@@ -318,8 +344,8 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | shown_restaurant_ids | jsonb           | what the user actually saw           |
 | user_feedback        | jsonb           | saved / dismissed / visited per item |
 | latency_ms           | int             |                                      |
-| token_usage          | jsonb           | prompt/completion tokens             |
-| cost_estimate        | numeric         |                                      |
+| token_usage          | jsonb           | prompt/completion tokens *(currently null — see Implementation status)* |
+| cost_estimate        | numeric         | *(currently null pending LLM usage capture)* |
 | created_at           | timestamptz     |                                      |
 
 
@@ -330,6 +356,7 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 - B-tree on all foreign keys and on `restaurants (source, source_id)`.
 - Partial index on `availability_alerts (status)` where `status = 'active'` for the polling job.
 - GIN on heavily-queried JSONB columns (e.g. `restaurants.categories`) if filtering on them.
+- *(Dev/SQLite)* The current backend approximates the geo and cuisine indexes with B-tree indexes on derived `restaurants.latitude`/`longitude` (a bounding-box prefilter, refined to an exact radius in code) and a `LIKE` over `categories_text`. These collapse into the GIST + GIN indexes above on Postgres.
 
 ### 5.3 Notable design choices
 
@@ -387,6 +414,7 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 - Unit tests for prompt assembly (golden prompts per `prompt_version`) and JSON parsing/repair.
 - Contract tests against provider API response shapes (with recorded fixtures).
 - Integration tests for the full pipeline against a seeded cache, asserting schema-valid output and correct hydration.
+- *(Implemented)* An offline `FAKE_LLM` mode returns deterministic, schema-valid LLM responses (with `hallucinate` / `malformed` variants) so the `llm` / `llm-repair` / `fallback` branches are tested without an API key. CI runs the suite (fallback + `FAKE_LLM`) on every push/PR.
 
 ---
 
@@ -400,12 +428,12 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 
 ## 9. Open Questions & Risks
 
-- **Backend language / hosting / auth provider** — not yet chosen (see Assumptions).
+- **Backend language / hosting / auth provider** — not yet chosen (see Assumptions). *Update: the implemented slice uses Python / FastAPI with a dev `X-User-Id` auth stub; treat this as a prototyping choice, not a final production decision.*
 - **Client platform** — confirm native mobile vs. cross-platform.
-- **Primary data provider** — Google Places vs. Yelp Fusion; ToS and cost differ (see ToS / Cost docs).
-- **Embedding model & dimension `N`** — pick the model; fix the vector dimension before writing migrations.
+- **Primary data provider** — Google Places vs. Yelp Fusion; ToS and cost differ (see ToS / Cost docs). *The dev seed is the Yelp Open Dataset (Philadelphia; academic-use-only), which has no NYC coverage — see PRD.*
+- **Embedding model & dimension `N`** — pick the model; fix the vector dimension before writing migrations. *Still open; `embedding` columns remain null and Stage 1 pre-ranks by rating as a stand-in.*
 - **Alert polling vs. ToS** — confirm permitted polling cadence per provider.
-- **LLM JSON reliability** — measure validation-failure rate early; the repair + pgvector fallback path mitigates it.
+- **LLM JSON reliability** — measure validation-failure rate early; the repair + pgvector fallback path mitigates it. *Update: schema validation, hallucination guard, one-shot repair, and rating-sorted fallback are implemented and tested (offline via `FAKE_LLM`).*
 
 ---
 
