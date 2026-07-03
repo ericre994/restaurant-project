@@ -37,6 +37,17 @@ def root():
     return RedirectResponse(url="/app/")
 
 
+@app.middleware("http")
+async def no_cache_dev_ui(request, call_next):
+    """Tell the browser to revalidate the dev UI on every load. Without this,
+    Chrome serves a cached index.html and edits to the harness silently don't
+    show up until a manual hard-refresh."""
+    response = await call_next(request)
+    if request.url.path.startswith("/app"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # Dev test harness: a single-page vanilla-JS UI for exercising list interactions,
 # served same-origin at /app (so it needs no CORS). html=True serves index.html
 # at the mount root. Kept last so it doesn't shadow the API routes above.

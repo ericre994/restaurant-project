@@ -149,11 +149,22 @@ const state = {
 };
 
 // ---- API helper (same-origin; optional X-User-Id header) ----
-async function api(method, path, body) {
+// Retries transient network errors ("Failed to fetch"): uvicorn's dev server on
+// Windows occasionally resets a keep-alive connection, which surfaces as a
+// rejected fetch even though the request is valid. HTTP errors (4xx/5xx) are
+// real and are NOT retried.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function api(method, path, body, _attempt = 0) {
   const headers = {};
   if (state.userId) headers["X-User-Id"] = state.userId;
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res;
+  try {
+    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  } catch (netErr) {
+    if (_attempt < 3) { await sleep(120 * (_attempt + 1)); return api(method, path, body, _attempt + 1); }
+    throw new Error("Network error — is the server running? (" + netErr.message + ")");
+  }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : res.statusText);
@@ -414,7 +425,16 @@ async function renderItems() {
   const l = selectedList();
   if (!l) { title.textContent = "Items"; el.innerHTML = `<p class="muted">Select a list on the left.</p>`; return; }
   title.textContent = `${l.name}`;
-  let items = await api("GET", `/lists/${l.id}/items`);
+  let items;
+  try {
+    items = await api("GET", `/lists/${l.id}/items`);
+  } catch (e) {
+    el.innerHTML = `<p class="muted">Couldn't load items: ${esc(e.message)}</p>`;
+    const retry = document.createElement("button");
+    retry.textContent = "Retry"; retry.onclick = renderItems;
+    el.appendChild(retry);
+    return;
+  }
   const f = state.listFilter.trim().toLowerCase();
   if (f) items = items.filter(it => ((it.restaurant && it.restaurant.name) || "").toLowerCase().includes(f));
   if (!items.length) {
