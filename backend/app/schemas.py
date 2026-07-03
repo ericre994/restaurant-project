@@ -50,8 +50,24 @@ class ListCreate(BaseModel):
     type: str = "custom"
 
 
+class ListUpdate(BaseModel):
+    """Rename a list. Only the display name is mutable; `type` is immutable."""
+
+    name: str
+
+
 class ItemCreate(BaseModel):
     restaurant_id: str
+    note: Optional[str] = None
+    tags: Optional[List[str]] = None
+    source: Optional[str] = None
+
+
+class ItemUpdate(BaseModel):
+    """Edit a saved item's note/tags/source. Omitted fields are left unchanged
+    (partial update via exclude_unset), so a client can clear a field only by
+    sending it explicitly (e.g. note: null)."""
+
     note: Optional[str] = None
     tags: Optional[List[str]] = None
     source: Optional[str] = None

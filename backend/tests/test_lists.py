@@ -62,3 +62,50 @@ def test_custom_list_create_and_delete(client):
 def test_cannot_delete_core_list(client):
     want = next(l for l in client.get("/lists").json() if l["type"] == "want_to_try")
     assert client.delete(f"/lists/{want['id']}").status_code == 400
+
+
+def test_rename_custom_list(client):
+    created = client.post("/lists", json={"name": "Brunch", "type": "custom"})
+    list_id = created.json()["id"]
+
+    renamed = client.patch(f"/lists/{list_id}", json={"name": "Weekend Brunch"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Weekend Brunch"
+    # The rename persists on a fresh read.
+    got = next(l for l in client.get("/lists").json() if l["id"] == list_id)
+    assert got["name"] == "Weekend Brunch"
+
+
+def test_cannot_rename_core_list(client):
+    want = next(l for l in client.get("/lists").json() if l["type"] == "want_to_try")
+    resp = client.patch(f"/lists/{want['id']}", json={"name": "My Wishlist"})
+    assert resp.status_code == 400
+
+
+def test_edit_item_note_and_tags(client):
+    want = next(l for l in client.get("/lists").json() if l["type"] == "want_to_try")
+    client.post(
+        f"/lists/{want['id']}/items",
+        json={"restaurant_id": "r1", "note": "old note", "tags": ["pizza"]},
+    )
+
+    # Partial update: change tags, leave note untouched.
+    resp = client.patch(
+        f"/lists/{want['id']}/items/r1", json={"tags": ["pizza", "date-night"]}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["tags"] == ["pizza", "date-night"]
+    assert body["note"] == "old note"
+
+    # Update the note too; new tag filter reflects the change.
+    client.patch(f"/lists/{want['id']}/items/r1", json={"note": "great for two"})
+    items = client.get(f"/lists/{want['id']}/items?tag=date-night").json()
+    assert len(items) == 1
+    assert items[0]["note"] == "great for two"
+
+
+def test_edit_item_not_in_list_404(client):
+    want = next(l for l in client.get("/lists").json() if l["type"] == "want_to_try")
+    resp = client.patch(f"/lists/{want['id']}/items/nope", json={"note": "x"})
+    assert resp.status_code == 404

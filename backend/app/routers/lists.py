@@ -66,6 +66,26 @@ def create_list(
     return data
 
 
+@router.patch("/{list_id}", response_model=schemas.ListOut)
+def rename_list(
+    list_id: str,
+    payload: schemas.ListUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Rename a custom list. Core lists (want_to_try / visited) keep their
+    canonical names — same protection as delete."""
+    lst = _owned_list(db, user, list_id)
+    if lst.type in models.CORE_LIST_TYPES:
+        raise HTTPException(400, "Cannot rename a core list (want_to_try / visited)")
+    lst.name = payload.name
+    db.commit()
+    db.refresh(lst)
+    data = schemas.ListOut.model_validate(lst)
+    data.item_count = len(lst.items)
+    return data
+
+
 @router.delete("/{list_id}", status_code=204)
 def delete_list(
     list_id: str,
@@ -132,6 +152,27 @@ def add_item(
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "Restaurant already in this list")
+    db.refresh(item)
+    return item
+
+
+@router.patch("/{list_id}/items/{restaurant_id}", response_model=schemas.ListItemOut)
+def update_item(
+    list_id: str,
+    restaurant_id: str,
+    payload: schemas.ItemUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Edit a saved item's note / tags / source (PRD §4.1: annotate saves).
+    Partial update — only fields present in the body are changed."""
+    lst = _owned_list(db, user, list_id)
+    item = _find_item(db, lst.id, restaurant_id)
+    if item is None:
+        raise HTTPException(404, "Item not in list")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(item, field, value)
+    db.commit()
     db.refresh(item)
     return item
 

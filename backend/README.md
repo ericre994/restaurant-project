@@ -21,6 +21,33 @@ uvicorn app.main:app --reload            # http://127.0.0.1:8000/docs
 the YelpData pipeline first if it's missing. Without seeding, the API still runs;
 you just won't have restaurants to add to lists.
 
+## Dev UI (test harness)
+
+A single-page vanilla-JS UI is served **same-origin** at
+**http://127.0.0.1:8000/app/** (no CORS, no build step). It's a manual test
+harness for the list interactions: search the Philly seed, create / rename /
+delete lists, add / move / remove restaurants, edit notes & tags, and record
+visits. The `X-User-Id` box in the header switches the acting user (blank = the
+default dev user), so you can exercise per-user isolation by hand. The page lives
+in `app/static/index.html` and talks only to the endpoints below.
+
+## Migrations (Alembic)
+
+Schema is defined by `app/models.py`; migrations are generated from it and live
+in `alembic/`. They target whatever `DATABASE_URL` points at (SQLite for dev,
+Postgres in prod), so run from `backend/`:
+
+```bash
+python -m alembic upgrade head                        # apply
+python -m alembic revision --autogenerate -m "msg"    # after changing models.py
+```
+
+The initial migration is DB-agnostic (JSON `embedding`, B-tree lat/lng). The
+Postgres specialization — `pgvector` embedding + `geography`/GIST radius + GIN
+cuisine index (TDD §5.2) — is a deliberate **follow-up** migration, blocked on
+fixing the embedding dimension `N` (TDD §9). For dev convenience the app still
+does `create_all` on startup; on Postgres use `alembic upgrade head` instead.
+
 ## Tests
 
 ```bash
@@ -61,9 +88,11 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 | PUT    | `/me/taste-profile` | Set explicit prefs (`dietary_restrictions`, `ambiance_prefs`, cold-start `cuisines_preferred`/`price_pref`) |
 | GET    | `/lists` | A user's lists (with item counts) |
 | POST   | `/lists` | Create a custom list |
+| PATCH  | `/lists/{id}` | Rename a custom list (`name`; core lists are protected) |
 | DELETE | `/lists/{id}` | Delete a custom list (core lists are protected) |
 | GET    | `/lists/{id}/items` | Items, hydrated; filters: `q`, `cuisine`, `price_max`, `tag` |
 | POST   | `/lists/{id}/items` | Add a restaurant (`restaurant_id`, `note`, `tags`, `source`) |
+| PATCH  | `/lists/{id}/items/{restaurant_id}` | Edit a saved item's `note` / `tags` / `source` (partial) |
 | DELETE | `/lists/{id}/items/{restaurant_id}` | Remove a restaurant from a list |
 | POST   | `/lists/{id}/items/{restaurant_id}/move` | Move to another list (`to_list_id`) |
 | POST   | `/visits` | Record a visit (`sentiment`, `user_rating`, `notes`) |
@@ -126,10 +155,11 @@ derived signal actually changes, since `refresh()` runs on every visit/feedback.
 
 ## Next steps
 
-- Generate Alembic migrations from `app/models.py` for the Postgres target
-  (currently tables are created via `create_all` for dev convenience). On Postgres,
-  replace the lat/lng bbox with a `geography` + GIST radius query and add a GIN
-  index for cuisine; add the pgvector pre-rank (TDD §4.1).
+- **[done]** Alembic migrations are generated from `app/models.py` (see the
+  Migrations section above). Still to do on Postgres: a follow-up migration that
+  replaces the lat/lng bbox with a `geography` + GIST radius query, adds a GIN
+  index for cuisine, and switches `embedding` to pgvector (TDD §4.1 / §5.2) —
+  gated on fixing the embedding dimension `N`.
 - Surface LLM token usage from the prototype so `token_usage` / `cost_estimate`
   get logged (TDD §7.3 observability).
 - Move `taste.refresh()` from inline (on each visit/feedback) to a periodic job
