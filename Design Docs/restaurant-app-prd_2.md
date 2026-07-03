@@ -2,9 +2,9 @@
 
 ## Restaurant Discovery & Management App
 
-**Version:** 0.2 (Draft)
+**Version:** 0.3 (Draft)
 **Author:** Eric
-**Last updated:** June 24, 2026
+**Last updated:** July 3, 2026
 **Status:** In review — MVP slice partially implemented
 
 ---
@@ -28,20 +28,20 @@ There is no single product that closes the loop from *intent* (want to try) → 
 
 Be the system of record for a user's dining life: a place where saved intent compounds into a taste profile, and that taste profile powers recommendations that feel like they came from a friend who knows you, then gets you a table.
 
-### 1.4 Implementation status (June 24, 2026)
+### 1.4 Implementation status (July 3, 2026)
 
 An early backend slice is built (FastAPI; see the Technical Design Doc's Implementation status). This tracks MVP feature progress; targets and metrics below are unchanged.
 
 | Feature | Status |
 | ------- | ------ |
-| List management — want-to-try / visited / custom, tags, source, visit sentiment (§4.1) | **Built** (backend) |
+| List management — want-to-try / visited / custom, tags, source, visit sentiment; list rename, item edit, core-list exclusivity, multi-visit history (§4.1) | **Built** (backend + dev web UI) |
 | AI natural-language recommendations + reliability guards (§4.2) | **Built** (backend; LLM path validated offline, real API not yet exercised) |
 | Taste profile from visits + feedback (§4.2) | **Built** (backend) |
 | Reservation availability alerts (§4.3) | Not started |
 | Reservation deep-linking (§4.4) | Not started |
 | Weekly recap / newsletter (§4.5) | Not started |
 
-Caveats: data is the academic-use-only Yelp Open Dataset (Philadelphia, **no NYC coverage**) for dev only; no client app yet; persistence is dev SQLite modeling the planned Postgres schema.
+Caveats: data is the academic-use-only Yelp Open Dataset (Philadelphia, **no NYC coverage**) for dev only; the only client so far is a dev-only web UI harness (served at `/app`) for exercising the list APIs — not the planned production mobile app; persistence is dev SQLite modeling the planned Postgres schema, now with an initial Alembic migration.
 
 ---
 
@@ -82,16 +82,18 @@ These overlap heavily; the same user is often all three in different moments.
 
 ### 4.1 List Management: Want-to-Try vs. Visited
 
-The foundational data model distinguishes two states:
+The foundational data model distinguishes two **mutually exclusive** core states — a restaurant is either want-to-try or visited, never both:
 
 - **Want-to-Try:** captured intent. Supports tags (cuisine, neighborhood, occasion fit), source attribution ("saved from a friend," "saw on Instagram"), and free-text notes.
-- **Visited:** completed experiences. On marking visited, a lightweight prompt captures a 1-tap sentiment (loved / liked / wouldn't return) and optional notes. This is the highest-signal input to the taste profile.
+- **Visited:** completed experiences. On marking visited, a lightweight prompt captures a 1-tap sentiment (loved / liked / wouldn't return) and optional notes. This is the highest-signal input to the taste profile. Each visit is logged separately, so a restaurant accumulates a visit history rather than a single "visited" flag.
 
 **Requirements**
 
 - One-tap save from search results and recommendation cards
-- Move between states in ≤2 taps
-- Custom lists layered on top of the two core states (e.g., "Date Night," "Cheap Eats")
+- The two core states are **mutually exclusive**: saving to one removes the restaurant from the other, so moving between them is ≤2 taps and never leaves a place in both
+- Custom lists layered on top of the two core states (e.g., "Date Night," "Cheap Eats"), and are **additive** — a restaurant can sit in a core state *and* any number of custom lists at once. Custom lists can be renamed and deleted (core lists are protected)
+- Saved items remain editable after the fact (notes, tags)
+- Log each visit separately, building a per-restaurant visit history
 - Search and filter across all lists by cuisine, neighborhood, price, tags
 - Restaurant records hydrated from the restaurant data API (hours, price level, photos, location)
 
