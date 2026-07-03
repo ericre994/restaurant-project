@@ -10,12 +10,26 @@ set `DATABASE_URL` to a Postgres DSN to switch.
 ## Setup & run
 
 ```bash
-cd backend
+cd backend                               # run FROM here (see the note below)
 pip install -r requirements.txt
 
 python -m app.seed                       # load the Philly seed + create the dev user
-uvicorn app.main:app --reload            # http://127.0.0.1:8000/docs
+uvicorn app.main:app                     # http://127.0.0.1:8000  (UI) · /docs (API)
 ```
+
+**Two launch gotchas** (both surface as "the server keeps crashing" / a blank UI):
+
+- **Run from `backend/`.** The dev DB default is now an absolute path to
+  `backend/app.db`, so the seed is used no matter where you launch from — but
+  running as a module (`app.main`) still needs `backend/` on the path. Simplest is
+  to `cd backend` first. (`--app-dir backend` from the repo root also works.)
+- **`--reload` restarts on every DB write.** With plain `--reload`, WatchFiles
+  watches the whole tree including `app.db`; each list/visit write changes the file
+  and restarts the server mid-request, which looks like a crash. Omit `--reload`
+  for normal use, or exclude the DB if you want hot-reload on code edits:
+  ```bash
+  uvicorn app.main:app --reload --reload-exclude "*.db*"
+  ```
 
 `app.seed` requires `YelpData/output/restaurants_Philadelphia_schema.json` — run
 the YelpData pipeline first if it's missing. Without seeding, the API still runs;
