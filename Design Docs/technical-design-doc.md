@@ -5,8 +5,8 @@
 | ---------------- | ------------------------------------------------------------------------------------------------ |
 | **Status**       | Draft — MVP slice partially implemented                                                          |
 | **Author**       | Eric                                                                                             |
-| **Version**      | 0.2                                                                                              |
-| **Last updated** | June 24, 2026                                                                                    |
+| **Version**      | 0.3                                                                                              |
+| **Last updated** | July 3, 2026                                                                                     |
 | **Reviewers**    | *TBD*                                                                                            |
 | **Related docs** | PRD, Cost & Unit Economics Model, API ToS Review, Privacy & Data Handling Notes, Product Roadmap, Git/CI Setup |
 
@@ -21,22 +21,24 @@ The MVP scope is: natural-language recommendations, want-to-try / visited list m
 
 The central technical bet is the **recommendation pipeline**: rather than asking an LLM to search the world, the system pre-filters a small candidate set (15–20 restaurants) from a structured data source, then uses the LLM purely for ranking, scoring, and explanation. This keeps cost and latency bounded and predictable while still delivering the "it understands what I want" experience.
 
-### Implementation status (June 24, 2026)
+### Implementation status (July 3, 2026)
 
 A first vertical slice is implemented in `backend/` (FastAPI + SQLAlchemy) on top of the `prototype/` recommendation pipeline. The design below remains the target; this box records current reality and where it defers or stands in.
 
 **Built**
 
-- **List management** (§5.1): want-to-try / visited / custom lists, list items, visits. Recording a visit reconciles the core lists (moves the restaurant from Want-to-Try to Visited).
+- **List management** (§5.1): want-to-try / visited / custom lists, list items, visits — with list rename (`PATCH /lists/{id}`) and item edit (`PATCH /lists/{id}/items/{restaurant_id}`, note/tags/source). The two core lists are **mutually exclusive**: adding a restaurant to one (by an explicit add or by recording a visit) evicts it from the other, while custom lists stay additive. Each visit is a separate row, so a restaurant keeps a visit history (`GET /visits?restaurant_id=`).
 - **Recommendation pipeline** behind `POST /recommendations`, reusing `prototype/recommend.py` as the single source of truth for ranking/render. Stage 1 retrieval runs in SQL (price + geo bounding box + cuisine + rating pre-rank). The hallucination guard, one-shot repair retry, and rating-sorted fallback are implemented and tested.
 - **Feedback loop** (§4.5): every recommendation writes a `recommendation_logs` row; `POST /recommendations/{id}/feedback` records per-item actions.
 - **Taste profiles** (§4.5): `taste_profiles` is aggregated from visits + feedback; `derived_summary` is LLM-generated with a deterministic template fallback. Read by the pipeline per request (`GET/PUT /me/taste-profile`).
+- **Migrations** (§5.2): an initial Alembic migration is generated from the models covering all implemented list-management tables. It is DB-agnostic (JSON `embedding`, B-tree lat/lng), so it applies to both dev SQLite and Postgres; the Postgres specialization (pgvector, GIST, GIN) is a deferred follow-up (see below).
+- **Dev UI**: a single-page vanilla-JS harness served same-origin at `/app` (no CORS, no build step) exercises the list APIs — search, an add-to-list picker over core + custom lists, rename/edit, and multi-visit logging. It stands in for the not-yet-built client app and is explicitly a dev test tool, not production UI.
 
 **Schema deltas folded into §5.1**: `list_items.tags`, `list_items.source`, `visits.sentiment` (required by PRD §4.1); plus dev-only derived columns on `restaurants` (`latitude`, `longitude`, `categories_text`) for SQLite indexing.
 
 **Deferred / dev stand-ins** (consistent with the open questions in §9)
 
-- **Persistence**: SQLite for dev, modeling the Postgres schema; no Alembic migrations or pgvector yet. `embedding` stays null (model + dimension `N` TBD).
+- **Persistence**: SQLite for dev, modeling the Postgres schema. An initial Alembic migration now exists (DB-agnostic); the Postgres specialization — pgvector embeddings + `geography`/GIST + a GIN cuisine index — is a deferred follow-up migration, blocked on fixing the embedding dimension `N` (so `embedding` stays null for now).
 - **Auth**: a dev stub (`X-User-Id` header) stands in for the identity provider.
 - **Observability**: `recommendation_logs.token_usage` / `cost_estimate` are null — the prototype's LLM call doesn't yet surface usage.
 - **Not started**: reservations (§4.3), availability alerts (§4.4), the weekly recap (PRD §4.5), and a *periodic* taste-recompute job (refresh runs inline on each visit/feedback for now).
@@ -260,9 +262,11 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | ---------- | --------------- | ------------------------------------ |
 | id         | uuid PK         |                                      |
 | user_id    | uuid FK → users |                                      |
-| type       | text            | `want_to_try` / `visited` / `custom` |
+| type       | text            | `want_to_try` / `visited` (core: one each per user, mutually exclusive) / `custom` |
 | name       | text            |                                      |
 | created_at | timestamptz     |                                      |
+
+Invariant: a restaurant is in at most one of the two **core** lists at a time — adding it to `want_to_try` or `visited` (or recording a visit) removes it from the other. `custom` lists are additive and unaffected. Enforced in application logic, not a DB constraint.
 
 
 **list_items**
@@ -377,9 +381,10 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | POST                | `/recommendations`               | Run pipeline; body: `{ query, location, filters }` |
 | POST                | `/recommendations/{id}/feedback` | Record per-item feedback                           |
 | GET / POST          | `/lists`                         | List / create lists                                |
-| GET / POST / DELETE | `/lists/{id}/items`              | Manage list items                                  |
-| POST                | `/visits`                        | Record a visit                                     |
-| GET                 | `/restaurants/{id}`              | Restaurant detail                                  |
+| PATCH / DELETE      | `/lists/{id}`                    | Rename / delete a custom list (core lists protected) |
+| GET/POST/PATCH/DELETE | `/lists/{id}/items`            | Manage items: add (evicts from the sibling core list), edit note/tags/source, move, remove |
+| GET / POST          | `/visits`                        | Record a visit / list visit history (optional `?restaurant_id=`) |
+| GET                 | `/restaurants` · `/restaurants/{id}` | Search the cache / restaurant detail          |
 | POST                | `/reservations`                  | Create reservation intent → returns deep link      |
 | GET / POST / DELETE | `/availability-alerts`           | Manage alerts                                      |
 
@@ -431,7 +436,7 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 - **Backend language / hosting / auth provider** — not yet chosen (see Assumptions). *Update: the implemented slice uses Python / FastAPI with a dev `X-User-Id` auth stub; treat this as a prototyping choice, not a final production decision.*
 - **Client platform** — confirm native mobile vs. cross-platform.
 - **Primary data provider** — Google Places vs. Yelp Fusion; ToS and cost differ (see ToS / Cost docs). *The dev seed is the Yelp Open Dataset (Philadelphia; academic-use-only), which has no NYC coverage — see PRD.*
-- **Embedding model & dimension `N`** — pick the model; fix the vector dimension before writing migrations. *Still open; `embedding` columns remain null and Stage 1 pre-ranks by rating as a stand-in.*
+- **Embedding model & dimension `N`** — pick the model; fix the vector dimension before the pgvector migration. *Still open; the initial (DB-agnostic) Alembic migration stores `embedding` as JSON/null, and Stage 1 pre-ranks by rating as a stand-in until a real embedding + pgvector column land.*
 - **Alert polling vs. ToS** — confirm permitted polling cadence per provider.
 - **LLM JSON reliability** — measure validation-failure rate early; the repair + pgvector fallback path mitigates it. *Update: schema validation, hallucination guard, one-shot repair, and rating-sorted fallback are implemented and tested (offline via `FAKE_LLM`).*
 
