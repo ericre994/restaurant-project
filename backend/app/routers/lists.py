@@ -66,6 +66,26 @@ def create_list(
     return data
 
 
+@router.patch("/{list_id}", response_model=schemas.ListOut)
+def rename_list(
+    list_id: str,
+    payload: schemas.ListUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Rename a custom list. Core lists (want_to_try / visited) keep their
+    canonical names — same protection as delete."""
+    lst = _owned_list(db, user, list_id)
+    if lst.type in models.CORE_LIST_TYPES:
+        raise HTTPException(400, "Cannot rename a core list (want_to_try / visited)")
+    lst.name = payload.name
+    db.commit()
+    db.refresh(lst)
+    data = schemas.ListOut.model_validate(lst)
+    data.item_count = len(lst.items)
+    return data
+
+
 @router.delete("/{list_id}", status_code=204)
 def delete_list(
     list_id: str,
@@ -119,6 +139,10 @@ def add_item(
     lst = _owned_list(db, user, list_id)
     if db.get(models.Restaurant, payload.restaurant_id) is None:
         raise HTTPException(404, "Restaurant not found")
+    # Want-to-Try and Visited are mutually exclusive: adding a restaurant to one
+    # core list removes it from the other. Custom lists stay additive (a
+    # restaurant can be in several at once, alongside a core list).
+    _drop_from_sibling_core_list(db, user, lst, payload.restaurant_id)
     item = models.ListItem(
         list_id=lst.id,
         restaurant_id=payload.restaurant_id,
@@ -132,6 +156,45 @@ def add_item(
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "Restaurant already in this list")
+    db.refresh(item)
+    return item
+
+
+def _drop_from_sibling_core_list(
+    db: Session, user: models.User, target: models.SavedList, restaurant_id: str
+) -> None:
+    """If `target` is a core list, remove `restaurant_id` from the *other* core
+    list so a restaurant is only ever Want-to-Try XOR Visited (PRD §4.1)."""
+    if target.type not in models.CORE_LIST_TYPES:
+        return
+    sibling_type = (
+        models.VISITED if target.type == models.WANT_TO_TRY else models.WANT_TO_TRY
+    )
+    sibling = _core_list(db, user, sibling_type)
+    if sibling is None:
+        return
+    stale = _find_item(db, sibling.id, restaurant_id)
+    if stale is not None:
+        db.delete(stale)
+
+
+@router.patch("/{list_id}/items/{restaurant_id}", response_model=schemas.ListItemOut)
+def update_item(
+    list_id: str,
+    restaurant_id: str,
+    payload: schemas.ItemUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Edit a saved item's note / tags / source (PRD §4.1: annotate saves).
+    Partial update — only fields present in the body are changed."""
+    lst = _owned_list(db, user, list_id)
+    item = _find_item(db, lst.id, restaurant_id)
+    if item is None:
+        raise HTTPException(404, "Item not in list")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(item, field, value)
+    db.commit()
     db.refresh(item)
     return item
 

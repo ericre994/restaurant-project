@@ -36,9 +36,10 @@ The canonical data schema is the **`restaurants` table in TDD §5.1** (nine tabl
 cd backend
 pip install --user -r requirements.txt    # system Anaconda is read-only here; --user is required
 python -m app.seed                          # load Philly seed into SQLite + create dev user
-uvicorn app.main:app --reload               # docs at http://127.0.0.1:8000/docs
-pytest                                       # 6 e2e tests against an isolated temp SQLite DB
+uvicorn app.main:app                        # UI at http://127.0.0.1:8000/ · docs at /docs
+pytest                                       # e2e tests against an isolated temp SQLite DB
 ```
+Run the server **from `backend/`**. Avoid plain `--reload`: WatchFiles watches the tree including `app.db`, so every list/visit write restarts the server mid-request (looks like a crash). Use `--reload --reload-exclude "*.db*"` if you want hot-reload. The dev DB default is an absolute path to `backend/app.db`, so the seed is used regardless of CWD.
 SQLite (`backend/app.db`) is the dev default; set `DATABASE_URL` to a Postgres DSN to switch. Tables are created via `create_all` on startup — generate Alembic migrations from `app/models.py` before going to Postgres. Auth is a dev stub: the user comes from an `X-User-Id` header, defaulting to a fixed dev user (`services.DEV_USER_ID`). See `backend/README.md` for the endpoint table. **This environment is Python 3.9** — use `typing.Optional[...]`, not PEP 604 `X | None`, in any annotation SQLAlchemy or FastAPI resolves (both fail to evaluate `|` unions on 3.9).
 
 ### Recommendation prototype

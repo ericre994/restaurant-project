@@ -10,16 +10,67 @@ set `DATABASE_URL` to a Postgres DSN to switch.
 ## Setup & run
 
 ```bash
-cd backend
+cd backend                               # run FROM here (see the note below)
 pip install -r requirements.txt
 
 python -m app.seed                       # load the Philly seed + create the dev user
-uvicorn app.main:app --reload            # http://127.0.0.1:8000/docs
+uvicorn app.main:app                     # http://127.0.0.1:8000  (UI) · /docs (API)
 ```
+
+**Two launch gotchas** (both surface as "the server keeps crashing" / a blank UI):
+
+- **Run from `backend/`.** The dev DB default is now an absolute path to
+  `backend/app.db`, so the seed is used no matter where you launch from — but
+  running as a module (`app.main`) still needs `backend/` on the path. Simplest is
+  to `cd backend` first. (`--app-dir backend` from the repo root also works.)
+- **`--reload` restarts on every DB write.** With plain `--reload`, WatchFiles
+  watches the whole tree including `app.db`; each list/visit write changes the file
+  and restarts the server mid-request, which looks like a crash. Omit `--reload`
+  for normal use, or exclude the DB if you want hot-reload on code edits:
+  ```bash
+  uvicorn app.main:app --reload --reload-exclude "*.db*"
+  ```
 
 `app.seed` requires `YelpData/output/restaurants_Philadelphia_schema.json` — run
 the YelpData pipeline first if it's missing. Without seeding, the API still runs;
 you just won't have restaurants to add to lists.
+
+## Dev UI (test harness)
+
+A vanilla-JS UI is served **same-origin** at **http://127.0.0.1:8000/app/** (no
+CORS, no build step). The bare root **http://127.0.0.1:8000/** redirects there,
+so the base URL just works (the API docs remain at `/docs`). It's a manual test
+harness for the list interactions, split into two hash-routed pages:
+
+- **Find Restaurants** (`#/lookup`) — search the Philly seed; each result has an
+  **Add to…** picker (any core or custom list) and a **Log visit** button, and
+  shows a badge if the restaurant is already in Want-to-Try / Visited.
+- **My Lists** (`#/lists`) — the lists sidebar (create / rename / delete custom
+  lists) plus the selected list's items, each with **Add to…**, edit notes/tags,
+  **Log visit** (repeatable — "Log another visit"), and remove.
+
+Adding to a core list is mutually exclusive (see Behaviors below); adding to a
+custom list is additive. The `X-User-Id` box in the header switches the acting
+user (blank = the default dev user), so you can exercise per-user isolation by
+hand. The page lives in `app/static/index.html` and talks only to the endpoints
+below.
+
+## Migrations (Alembic)
+
+Schema is defined by `app/models.py`; migrations are generated from it and live
+in `alembic/`. They target whatever `DATABASE_URL` points at (SQLite for dev,
+Postgres in prod), so run from `backend/`:
+
+```bash
+python -m alembic upgrade head                        # apply
+python -m alembic revision --autogenerate -m "msg"    # after changing models.py
+```
+
+The initial migration is DB-agnostic (JSON `embedding`, B-tree lat/lng). The
+Postgres specialization — `pgvector` embedding + `geography`/GIST radius + GIN
+cuisine index (TDD §5.2) — is a deliberate **follow-up** migration, blocked on
+fixing the embedding dimension `N` (TDD §9). For dev convenience the app still
+does `create_all` on startup; on Postgres use `alembic upgrade head` instead.
 
 ## Tests
 
@@ -61,13 +112,15 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 | PUT    | `/me/taste-profile` | Set explicit prefs (`dietary_restrictions`, `ambiance_prefs`, cold-start `cuisines_preferred`/`price_pref`) |
 | GET    | `/lists` | A user's lists (with item counts) |
 | POST   | `/lists` | Create a custom list |
+| PATCH  | `/lists/{id}` | Rename a custom list (`name`; core lists are protected) |
 | DELETE | `/lists/{id}` | Delete a custom list (core lists are protected) |
 | GET    | `/lists/{id}/items` | Items, hydrated; filters: `q`, `cuisine`, `price_max`, `tag` |
-| POST   | `/lists/{id}/items` | Add a restaurant (`restaurant_id`, `note`, `tags`, `source`) |
+| POST   | `/lists/{id}/items` | Add a restaurant (`restaurant_id`, `note`, `tags`, `source`); adding to a core list evicts it from the sibling core list |
+| PATCH  | `/lists/{id}/items/{restaurant_id}` | Edit a saved item's `note` / `tags` / `source` (partial) |
 | DELETE | `/lists/{id}/items/{restaurant_id}` | Remove a restaurant from a list |
 | POST   | `/lists/{id}/items/{restaurant_id}/move` | Move to another list (`to_list_id`) |
-| POST   | `/visits` | Record a visit (`sentiment`, `user_rating`, `notes`) |
-| GET    | `/visits` | Visit history |
+| POST   | `/visits` | Record a visit (`sentiment`, `user_rating`, `notes`, `visited_at`); one row per visit — log as many as you like |
+| GET    | `/visits` | Visit history; optional `restaurant_id` filters to one restaurant |
 | GET    | `/restaurants` | Search the seed (`q`, `cuisine`, `price_max`, `limit`) |
 | GET    | `/restaurants/{id}` | Restaurant detail |
 | POST   | `/recommendations` | Run the retrieve→rank→render pipeline (`query`, `near`/`lat`+`lng`, `radius_km`, `price_max`, `cuisine`, `open_now`, `party_size`); writes a log row, returns its `recommendation_id` |
@@ -78,8 +131,14 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 
 - **Core lists are singletons.** Every user automatically gets one `want_to_try`
   and one `visited` list; they can't be created twice or deleted.
+- **Core lists are mutually exclusive.** A restaurant is only ever in Want-to-Try
+  *or* Visited, never both: adding it to one core list (via `POST /lists/{id}/items`
+  or by recording a visit) removes it from the other. Custom lists are unaffected —
+  a restaurant can sit in a core list and any number of custom lists at once.
 - **Recording a visit reconciles lists.** `POST /visits` removes the restaurant
   from Want-to-Try and adds it to Visited (PRD: marking visited is one action).
+  Each call logs a separate visit row, so a restaurant can have a full visit
+  history (fetch it with `GET /visits?restaurant_id=...`).
 - **Auth is a dev stub.** The user is taken from an `X-User-Id` header, defaulting
   to a fixed dev user. Real auth is a TDD open question — swap `deps.get_current_user`
   when decided.
@@ -126,10 +185,11 @@ derived signal actually changes, since `refresh()` runs on every visit/feedback.
 
 ## Next steps
 
-- Generate Alembic migrations from `app/models.py` for the Postgres target
-  (currently tables are created via `create_all` for dev convenience). On Postgres,
-  replace the lat/lng bbox with a `geography` + GIST radius query and add a GIN
-  index for cuisine; add the pgvector pre-rank (TDD §4.1).
+- **[done]** Alembic migrations are generated from `app/models.py` (see the
+  Migrations section above). Still to do on Postgres: a follow-up migration that
+  replaces the lat/lng bbox with a `geography` + GIST radius query, adds a GIN
+  index for cuisine, and switches `embedding` to pgvector (TDD §4.1 / §5.2) —
+  gated on fixing the embedding dimension `N`.
 - Surface LLM token usage from the prototype so `token_usage` / `cost_estimate`
   get logged (TDD §7.3 observability).
 - Move `taste.refresh()` from inline (on each visit/feedback) to a periodic job

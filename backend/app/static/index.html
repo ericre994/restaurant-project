@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Restaurant Lists — Dev Harness</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --panel: #fff; --line: #e3e3e8; --ink: #1d1d1f;
+    --muted: #6b6b73; --accent: #c0392b; --accent-ink: #fff; --ok: #1f8a4c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  header {
+    display: flex; align-items: center; gap: 18px; padding: 10px 20px;
+    background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 16px; margin: 0; white-space: nowrap; }
+  nav { display: flex; gap: 4px; }
+  nav a {
+    text-decoration: none; color: var(--muted); font-weight: 600; padding: 6px 12px;
+    border-radius: 7px; font-size: 14px;
+  }
+  nav a:hover { background: #f0f0f2; }
+  nav a.active { background: #fbeae7; color: var(--accent); }
+  header .who { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  header input { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  main { padding: 16px 20px; }
+  .two-col { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  .col { display: flex; flex-direction: column; gap: 16px; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  button:hover { background: #f0f0f2; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.08); }
+  button.tiny { padding: 2px 7px; font-size: 12px; }
+  input, select, textarea { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
+  select.addto { max-width: 150px; }
+  .list-row { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
+  .list-row:hover { background: #f0f0f2; }
+  .list-row.active { background: #fbeae7; }
+  .list-row .name { flex: 1; font-weight: 600; }
+  .list-row .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; font-size: 11px; background: #eef; color: #3a3a8a; border-radius: 4px; padding: 1px 6px; }
+  .badge.saved { background: #e7f6ec; color: var(--ok); }
+  .badge.visited { background: #efe7f6; color: #6a3a8a; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .card .title { font-weight: 600; }
+  .card .meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .card .tags { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .tag { background: #eef; color: #3a3a8a; border-radius: 4px; padding: 1px 7px; font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .muted { color: var(--muted); }
+  .note { color: var(--ink); font-size: 13px; margin-top: 4px; font-style: italic; }
+  .visits { color: var(--ok); font-size: 12px; margin-top: 4px; }
+  #toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: #1d1d1f; color: #fff; padding: 9px 16px; border-radius: 8px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 30; max-width: 80vw;
+  }
+  #toast.show { opacity: .95; }
+  #toast.err { background: var(--accent); }
+  .search-filters { display: grid; grid-template-columns: 1fr 130px 110px auto; gap: 8px; margin-bottom: 12px; }
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none;
+    align-items: center; justify-content: center; z-index: 20;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 20px; width: 380px; max-width: 92vw; }
+  .modal h3 { margin: 0 0 4px; }
+  .modal .field { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+  .modal .field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } .search-filters { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍽️ Restaurant Lists</h1>
+  <nav>
+    <a href="#/lookup" id="nav-lookup">Find Restaurants</a>
+    <a href="#/lists" id="nav-lists">My Lists</a>
+  </nav>
+  <div class="who">
+    <span id="user-label">…</span>
+    <label>X-User-Id <input id="user-id" placeholder="(default dev user)" size="14" /></label>
+    <button class="tiny" onclick="applyUser()">Switch</button>
+  </div>
+</header>
+
+<main id="content"></main>
+
+<!-- Log-visit modal -->
+<div class="modal-backdrop" id="visit-modal">
+  <div class="modal">
+    <h3>Log a visit</h3>
+    <div class="muted" id="visit-modal-sub"></div>
+    <div class="field">
+      <label>Sentiment</label>
+      <select id="v-sentiment">
+        <option value="">— none —</option>
+        <option value="loved">Loved it</option>
+        <option value="liked">Liked it</option>
+        <option value="wouldnt_return">Wouldn't return</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Rating (1–5)</label>
+      <select id="v-rating">
+        <option value="">— none —</option>
+        <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Date</label>
+      <input type="date" id="v-date" />
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="v-notes" rows="2" placeholder="What did you have? Who with?"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeVisit()">Cancel</button>
+      <button class="primary" onclick="submitVisit()">Log visit</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const state = {
+  lists: [], userId: "", route: "lookup",
+  selectedListId: null, results: null, listFilter: "",
+  visitsByRestaurant: {},   // restaurant_id -> [visits]
+  savedIn: {},              // restaurant_id -> Set(list types) for badges on lookup
+  pendingVisit: null,       // {restaurantId, name}
+};
+
+// ---- API helper (same-origin; optional X-User-Id header) ----
+// Retries transient network errors ("Failed to fetch"): uvicorn's dev server on
+// Windows occasionally resets a keep-alive connection, which surfaces as a
+// rejected fetch even though the request is valid. HTTP errors (4xx/5xx) are
+// real and are NOT retried.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function api(method, path, body, _attempt = 0) {
+  const headers = {};
+  if (state.userId) headers["X-User-Id"] = state.userId;
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  let res;
+  try {
+    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  } catch (netErr) {
+    if (_attempt < 3) { await sleep(120 * (_attempt + 1)); return api(method, path, body, _attempt + 1); }
+    throw new Error("Network error — is the server running? (" + netErr.message + ")");
+  }
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : res.statusText);
+  return data;
+}
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = "show" + (isErr ? " err" : "");
+  clearTimeout(toast._t); toast._t = setTimeout(() => (t.className = ""), 2600);
+}
+const price = n => (n ? "$".repeat(n) : "—");
+const esc = s => (s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const CORE = { want_to_try: "Want to Try", visited: "Visited" };
+
+// ---- User switching ----
+function applyUser() {
+  state.userId = document.getElementById("user-id").value.trim();
+  state.selectedId = null; state.results = null;
+  boot();
+}
+async function loadUser() {
+  try { const u = await api("GET", "/me"); document.getElementById("user-label").textContent = u.display_name || u.id.slice(0, 8); }
+  catch (e) { toast("Load user failed: " + e.message, true); }
+}
+
+// ---- Shared data load ----
+async function loadCore() {
+  state.lists = await api("GET", "/lists");
+  if (!state.selectedListId && state.lists.length) {
+    const want = state.lists.find(l => l.type === "want_to_try");
+    state.selectedListId = (want || state.lists[0]).id;
+  }
+  // Visit history (for counts) + a map of which core lists a restaurant is in.
+  const visits = await api("GET", "/visits");
+  const vmap = {};
+  for (const v of visits) (vmap[v.restaurant_id] = vmap[v.restaurant_id] || []).push(v);
+  state.visitsByRestaurant = vmap;
+
+  const saved = {};
+  for (const l of state.lists.filter(x => x.type === "want_to_try" || x.type === "visited")) {
+    const items = await api("GET", `/lists/${l.id}/items`);
+    for (const it of items) (saved[it.restaurant_id] = saved[it.restaurant_id] || new Set()).add(l.type);
+  }
+  state.savedIn = saved;
+}
+
+// ---- Add-to picker (shared) ----
+function addToSelect(restaurantId) {
+  const sel = document.createElement("select");
+  sel.className = "addto";
+  const core = state.lists.filter(l => l.type === "want_to_try" || l.type === "visited");
+  const custom = state.lists.filter(l => l.type === "custom");
+  let opts = `<option value="">Add to…</option>`;
+  opts += core.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("");
+  if (custom.length) {
+    opts += `<optgroup label="Custom lists">` +
+      custom.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("") + `</optgroup>`;
+  }
+  sel.innerHTML = opts;
+  sel.onchange = () => { if (sel.value) addToList(restaurantId, sel.value); sel.value = ""; };
+  return sel;
+}
+async function addToList(restaurantId, listId) {
+  const l = state.lists.find(x => x.id === listId);
+  try {
+    await api("POST", `/lists/${listId}/items`, { restaurant_id: restaurantId });
+    await loadCore();
+    render();
+    const note = (l && (l.type === "want_to_try" || l.type === "visited"))
+      ? ` (core lists are exclusive)` : "";
+    toast(`Added to “${l ? l.name : "list"}”${note}`);
+  } catch (e) {
+    if (String(e.message).includes("already in this list")) toast("Already in that list");
+    else toast("Add failed: " + e.message, true);
+  }
+}
+
+// ---- Visit modal ----
+function openVisit(restaurantId, name) {
+  state.pendingVisit = { restaurantId, name };
+  document.getElementById("visit-modal-sub").textContent = name;
+  document.getElementById("v-sentiment").value = "";
+  document.getElementById("v-rating").value = "";
+  document.getElementById("v-notes").value = "";
+  document.getElementById("v-date").value = "";
+  document.getElementById("visit-modal").classList.add("show");
+}
+function closeVisit() {
+  state.pendingVisit = null;
+  document.getElementById("visit-modal").classList.remove("show");
+}
+async function submitVisit() {
+  if (!state.pendingVisit) return;
+  const body = { restaurant_id: state.pendingVisit.restaurantId };
+  const s = document.getElementById("v-sentiment").value;
+  const r = document.getElementById("v-rating").value;
+  const notes = document.getElementById("v-notes").value.trim();
+  const date = document.getElementById("v-date").value;
+  if (s) body.sentiment = s;
+  if (r) body.user_rating = Number(r);
+  if (notes) body.notes = notes;
+  if (date) body.visited_at = new Date(date + "T12:00:00").toISOString();
+  const name = state.pendingVisit.name;
+  try {
+    await api("POST", "/visits", body);
+    closeVisit();
+    await loadCore();
+    render();
+    toast(`Logged a visit to “${name}” (now in Visited)`);
+  } catch (e) { toast("Log visit failed: " + e.message, true); }
+}
+function visitLine(restaurantId) {
+  const vs = state.visitsByRestaurant[restaurantId] || [];
+  if (!vs.length) return "";
+  const last = vs[0].visited_at ? new Date(vs[0].visited_at).toLocaleDateString() : "";
+  return `Visited ${vs.length}× ${last ? "· last " + last : ""}`;
+}
+
+// ---- Router ----
+function render() {
+  const hash = location.hash || "#/lookup";
+  state.route = hash.startsWith("#/lists") ? "lists" : "lookup";
+  document.getElementById("nav-lookup").classList.toggle("active", state.route === "lookup");
+  document.getElementById("nav-lists").classList.toggle("active", state.route === "lists");
+  if (state.route === "lists") renderLists();
+  else renderLookup();
+}
+window.addEventListener("hashchange", render);
+
+// ---- Lookup page ----
+function renderLookup() {
+  const c = document.getElementById("content");
+  c.innerHTML = `
+    <div class="panel">
+      <h2>Find restaurants (Philadelphia seed)</h2>
+      <div class="search-filters">
+        <input id="s-q" placeholder="Name contains…" />
+        <input id="s-cuisine" placeholder="Cuisine" />
+        <select id="s-price">
+          <option value="">Any price</option>
+          <option value="1">$</option><option value="2">$$</option>
+          <option value="3">$$$</option><option value="4">$$$$</option>
+        </select>
+        <button class="primary" id="s-go">Search</button>
+      </div>
+      <div id="search-results"></div>
+    </div>`;
+  document.getElementById("s-go").onclick = searchRestaurants;
+  document.getElementById("s-q").addEventListener("keydown", e => { if (e.key === "Enter") searchRestaurants(); });
+  renderResults();
+}
+function renderResults() {
+  const el = document.getElementById("search-results");
+  if (!el) return;
+  if (state.results === null) { el.innerHTML = `<p class="muted">Search to find restaurants to add to a list.</p>`; return; }
+  if (!state.results.length) { el.innerHTML = `<p class="muted">No matches.</p>`; return; }
+  el.innerHTML = "";
+  for (const r of state.results) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const badges = badgeHtml(r.id);
+    card.innerHTML =
+      `<div class="row"><span class="title grow">${esc(r.name)} ${badges}</span>` +
+      `<span class="muted">${price(r.price_level)} · ★${r.rating ?? "—"} (${r.rating_count ?? 0})</span></div>` +
+      `<div class="meta">${esc((r.categories || []).join(", "))}</div>`;
+    const line = visitLine(r.id);
+    if (line) card.innerHTML += `<div class="visits">${line}</div>`;
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.appendChild(addToSelect(r.id));
+    const visit = document.createElement("button"); visit.className = "tiny"; visit.textContent = "Log visit";
+    visit.onclick = () => openVisit(r.id, r.name);
+    actions.appendChild(visit);
+    card.appendChild(actions);
+    el.appendChild(card);
+  }
+}
+function badgeHtml(restaurantId) {
+  const types = state.savedIn[restaurantId];
+  if (!types) return "";
+  if (types.has("visited")) return `<span class="badge visited">visited</span>`;
+  if (types.has("want_to_try")) return `<span class="badge saved">want to try</span>`;
+  return "";
+}
+async function searchRestaurants() {
+  const q = document.getElementById("s-q").value.trim();
+  const cuisine = document.getElementById("s-cuisine").value.trim();
+  const priceMax = document.getElementById("s-price").value;
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (cuisine) params.set("cuisine", cuisine);
+  if (priceMax) params.set("price_max", priceMax);
+  params.set("limit", "25");
+  try { state.results = await api("GET", "/restaurants?" + params.toString()); renderResults(); }
+  catch (e) { toast("Search failed: " + e.message, true); }
+}
+
+// ---- Lists page ----
+function renderLists() {
+  const c = document.getElementById("content");
+  c.innerHTML = `
+    <div class="two-col">
+      <div class="col">
+        <div class="panel">
+          <h2>Lists</h2>
+          <div id="lists"></div>
+          <div class="row" style="margin-top:10px">
+            <input id="new-list-name" class="grow" placeholder="New list name" />
+            <button class="primary" id="new-list-go">＋</button>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="panel">
+          <div class="row"><h2 id="items-title" class="grow">Items</h2>
+            <input id="list-filter" placeholder="Filter by name…" /></div>
+          <div id="items"></div>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("new-list-go").onclick = createList;
+  document.getElementById("new-list-name").addEventListener("keydown", e => { if (e.key === "Enter") createList(); });
+  const f = document.getElementById("list-filter");
+  f.value = state.listFilter;
+  f.addEventListener("input", () => { state.listFilter = f.value; renderItems(); });
+  renderSidebar();
+  renderItems();
+}
+function renderSidebar() {
+  const el = document.getElementById("lists");
+  if (!el) return;
+  el.innerHTML = "";
+  for (const l of state.lists) {
+    const core = l.type === "want_to_try" || l.type === "visited";
+    const row = document.createElement("div");
+    row.className = "list-row" + (l.id === state.selectedListId ? " active" : "");
+    row.onclick = () => { state.selectedListId = l.id; renderSidebar(); renderItems(); };
+    row.innerHTML =
+      `<span class="name">${esc(l.name)}</span>` +
+      (core ? `<span class="badge">core</span>` : "") +
+      `<span class="count">${l.item_count ?? 0}</span>`;
+    if (!core) {
+      const ren = document.createElement("button"); ren.className = "tiny"; ren.textContent = "✎";
+      ren.title = "Rename"; ren.onclick = e => { e.stopPropagation(); renameList(l); };
+      const del = document.createElement("button"); del.className = "tiny"; del.textContent = "🗑";
+      del.title = "Delete"; del.onclick = e => { e.stopPropagation(); deleteList(l); };
+      row.append(ren, del);
+    }
+    el.appendChild(row);
+  }
+}
+function selectedList() { return state.lists.find(l => l.id === state.selectedListId); }
+
+async function renderItems() {
+  const title = document.getElementById("items-title");
+  const el = document.getElementById("items");
+  if (!title || !el) return;
+  const l = selectedList();
+  if (!l) { title.textContent = "Items"; el.innerHTML = `<p class="muted">Select a list on the left.</p>`; return; }
+  title.textContent = `${l.name}`;
+  let items;
+  try {
+    items = await api("GET", `/lists/${l.id}/items`);
+  } catch (e) {
+    el.innerHTML = `<p class="muted">Couldn't load items: ${esc(e.message)}</p>`;
+    const retry = document.createElement("button");
+    retry.textContent = "Retry"; retry.onclick = renderItems;
+    el.appendChild(retry);
+    return;
+  }
+  const f = state.listFilter.trim().toLowerCase();
+  if (f) items = items.filter(it => ((it.restaurant && it.restaurant.name) || "").toLowerCase().includes(f));
+  if (!items.length) {
+    el.innerHTML = `<p class="muted">${state.listFilter ? "No items match the filter." : "Empty. Add restaurants from Find Restaurants."}</p>`;
+    return;
+  }
+  el.innerHTML = "";
+  for (const it of items) {
+    const r = it.restaurant || {};
+    const card = document.createElement("div");
+    card.className = "card";
+    let html =
+      `<div class="row"><span class="title grow">${esc(r.name)}</span>` +
+      `<span class="muted">${price(r.price_level)} · ★${r.rating ?? "—"}</span></div>` +
+      `<div class="meta">${esc((r.categories || []).join(", "))}</div>`;
+    if (it.note) html += `<div class="note">“${esc(it.note)}”</div>`;
+    if (it.tags && it.tags.length) html += `<div class="tags">${it.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>`;
+    const vline = visitLine(it.restaurant_id);
+    if (vline) html += `<div class="visits">${vline}</div>`;
+    card.innerHTML = html;
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.appendChild(addToSelect(it.restaurant_id));
+
+    const edit = document.createElement("button"); edit.className = "tiny"; edit.textContent = "Edit note/tags";
+    edit.onclick = () => editItem(l.id, it); actions.appendChild(edit);
+
+    const visit = document.createElement("button"); visit.className = "tiny";
+    visit.textContent = (state.visitsByRestaurant[it.restaurant_id] || []).length ? "Log another visit" : "Log visit";
+    visit.onclick = () => openVisit(it.restaurant_id, r.name); actions.appendChild(visit);
+
+    const rm = document.createElement("button"); rm.className = "tiny"; rm.textContent = "Remove";
+    rm.onclick = () => removeItem(l.id, it.restaurant_id); actions.appendChild(rm);
+
+    card.appendChild(actions);
+    el.appendChild(card);
+  }
+}
+
+async function createList() {
+  const inp = document.getElementById("new-list-name");
+  const name = inp.value.trim();
+  if (!name) return toast("Enter a list name", true);
+  try {
+    const l = await api("POST", "/lists", { name, type: "custom" });
+    inp.value = ""; state.selectedListId = l.id; await loadCore(); render();
+    toast("Created “" + name + "”");
+  } catch (e) { toast("Create failed: " + e.message, true); }
+}
+async function renameList(l) {
+  const name = prompt("Rename list:", l.name);
+  if (name == null || !name.trim() || name === l.name) return;
+  try { await api("PATCH", `/lists/${l.id}`, { name: name.trim() }); await loadCore(); render(); toast("Renamed"); }
+  catch (e) { toast("Rename failed: " + e.message, true); }
+}
+async function deleteList(l) {
+  if (!confirm(`Delete list “${l.name}”? Items in it are removed.`)) return;
+  try {
+    await api("DELETE", `/lists/${l.id}`);
+    if (state.selectedListId === l.id) state.selectedListId = null;
+    await loadCore(); render(); toast("Deleted");
+  } catch (e) { toast("Delete failed: " + e.message, true); }
+}
+async function editItem(listId, it) {
+  const note = prompt("Note:", it.note || "");
+  if (note == null) return;
+  const tagsRaw = prompt("Tags (comma-separated):", (it.tags || []).join(", "));
+  if (tagsRaw == null) return;
+  const tags = tagsRaw.split(",").map(t => t.trim()).filter(Boolean);
+  try { await api("PATCH", `/lists/${listId}/items/${it.restaurant_id}`, { note, tags }); renderItems(); toast("Updated"); }
+  catch (e) { toast("Update failed: " + e.message, true); }
+}
+async function removeItem(listId, restaurantId) {
+  try { await api("DELETE", `/lists/${listId}/items/${restaurantId}`); await loadCore(); render(); toast("Removed"); }
+  catch (e) { toast("Remove failed: " + e.message, true); }
+}
+
+// ---- Boot ----
+async function boot() {
+  await loadUser();
+  await loadCore();
+  render();
+}
+boot();
+</script>
+</body>
+</html>
