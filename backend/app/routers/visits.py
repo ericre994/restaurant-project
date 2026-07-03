@@ -1,5 +1,7 @@
 """Visit endpoints (TDD §6: POST /visits). Recording a visit also reconciles the
 core lists: the restaurant leaves Want-to-Try and joins Visited (PRD §4.1)."""
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -39,13 +41,17 @@ def record_visit(
 
 @router.get("/visits", response_model=list[schemas.VisitOut])
 def list_visits(
-    db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
+    restaurant_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
-    return db.scalars(
-        select(models.Visit)
-        .where(models.Visit.user_id == user.id)
-        .order_by(models.Visit.visited_at.desc())
-    ).all()
+    """Visit history, newest first. Pass `restaurant_id` to get just one
+    restaurant's visits (each logged visit is a separate row — the UI logs one
+    per outing)."""
+    stmt = select(models.Visit).where(models.Visit.user_id == user.id)
+    if restaurant_id is not None:
+        stmt = stmt.where(models.Visit.restaurant_id == restaurant_id)
+    return db.scalars(stmt.order_by(models.Visit.visited_at.desc())).all()
 
 
 def _move_to_visited(db: Session, user: models.User, restaurant_id: str) -> None:

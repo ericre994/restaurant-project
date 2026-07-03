@@ -23,15 +23,23 @@ you just won't have restaurants to add to lists.
 
 ## Dev UI (test harness)
 
-A single-page vanilla-JS UI is served **same-origin** at
-**http://127.0.0.1:8000/app/** (no CORS, no build step). The bare root
-**http://127.0.0.1:8000/** redirects there, so the base URL just works (the API
-docs remain at `/docs`). It's a manual test
-harness for the list interactions: search the Philly seed, create / rename /
-delete lists, add / move / remove restaurants, edit notes & tags, and record
-visits. The `X-User-Id` box in the header switches the acting user (blank = the
-default dev user), so you can exercise per-user isolation by hand. The page lives
-in `app/static/index.html` and talks only to the endpoints below.
+A vanilla-JS UI is served **same-origin** at **http://127.0.0.1:8000/app/** (no
+CORS, no build step). The bare root **http://127.0.0.1:8000/** redirects there,
+so the base URL just works (the API docs remain at `/docs`). It's a manual test
+harness for the list interactions, split into two hash-routed pages:
+
+- **Find Restaurants** (`#/lookup`) — search the Philly seed; each result has an
+  **Add to…** picker (any core or custom list) and a **Log visit** button, and
+  shows a badge if the restaurant is already in Want-to-Try / Visited.
+- **My Lists** (`#/lists`) — the lists sidebar (create / rename / delete custom
+  lists) plus the selected list's items, each with **Add to…**, edit notes/tags,
+  **Log visit** (repeatable — "Log another visit"), and remove.
+
+Adding to a core list is mutually exclusive (see Behaviors below); adding to a
+custom list is additive. The `X-User-Id` box in the header switches the acting
+user (blank = the default dev user), so you can exercise per-user isolation by
+hand. The page lives in `app/static/index.html` and talks only to the endpoints
+below.
 
 ## Migrations (Alembic)
 
@@ -93,12 +101,12 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 | PATCH  | `/lists/{id}` | Rename a custom list (`name`; core lists are protected) |
 | DELETE | `/lists/{id}` | Delete a custom list (core lists are protected) |
 | GET    | `/lists/{id}/items` | Items, hydrated; filters: `q`, `cuisine`, `price_max`, `tag` |
-| POST   | `/lists/{id}/items` | Add a restaurant (`restaurant_id`, `note`, `tags`, `source`) |
+| POST   | `/lists/{id}/items` | Add a restaurant (`restaurant_id`, `note`, `tags`, `source`); adding to a core list evicts it from the sibling core list |
 | PATCH  | `/lists/{id}/items/{restaurant_id}` | Edit a saved item's `note` / `tags` / `source` (partial) |
 | DELETE | `/lists/{id}/items/{restaurant_id}` | Remove a restaurant from a list |
 | POST   | `/lists/{id}/items/{restaurant_id}/move` | Move to another list (`to_list_id`) |
-| POST   | `/visits` | Record a visit (`sentiment`, `user_rating`, `notes`) |
-| GET    | `/visits` | Visit history |
+| POST   | `/visits` | Record a visit (`sentiment`, `user_rating`, `notes`, `visited_at`); one row per visit — log as many as you like |
+| GET    | `/visits` | Visit history; optional `restaurant_id` filters to one restaurant |
 | GET    | `/restaurants` | Search the seed (`q`, `cuisine`, `price_max`, `limit`) |
 | GET    | `/restaurants/{id}` | Restaurant detail |
 | POST   | `/recommendations` | Run the retrieve→rank→render pipeline (`query`, `near`/`lat`+`lng`, `radius_km`, `price_max`, `cuisine`, `open_now`, `party_size`); writes a log row, returns its `recommendation_id` |
@@ -109,8 +117,14 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 
 - **Core lists are singletons.** Every user automatically gets one `want_to_try`
   and one `visited` list; they can't be created twice or deleted.
+- **Core lists are mutually exclusive.** A restaurant is only ever in Want-to-Try
+  *or* Visited, never both: adding it to one core list (via `POST /lists/{id}/items`
+  or by recording a visit) removes it from the other. Custom lists are unaffected —
+  a restaurant can sit in a core list and any number of custom lists at once.
 - **Recording a visit reconciles lists.** `POST /visits` removes the restaurant
   from Want-to-Try and adds it to Visited (PRD: marking visited is one action).
+  Each call logs a separate visit row, so a restaurant can have a full visit
+  history (fetch it with `GET /visits?restaurant_id=...`).
 - **Auth is a dev stub.** The user is taken from an `X-User-Id` header, defaulting
   to a fixed dev user. Real auth is a TDD open question — swap `deps.get_current_user`
   when decided.
