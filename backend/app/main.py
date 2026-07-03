@@ -6,6 +6,7 @@ Docs: http://127.0.0.1:8000/docs
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import models
@@ -27,6 +28,13 @@ app.include_router(recommendations.router)
 @app.get("/health", tags=["meta"])
 def health():
     return {"status": "ok"}
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Send the bare base URL to the dev UI so http://127.0.0.1:8000/ just works
+    (instead of a bare 404). The API docs stay at /docs."""
+    return RedirectResponse(url="/app/")
 
 
 # Dev test harness: a single-page vanilla-JS UI for exercising list interactions,

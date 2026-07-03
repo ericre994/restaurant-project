@@ -24,7 +24,9 @@ you just won't have restaurants to add to lists.
 ## Dev UI (test harness)
 
 A single-page vanilla-JS UI is served **same-origin** at
-**http://127.0.0.1:8000/app/** (no CORS, no build step). It's a manual test
+**http://127.0.0.1:8000/app/** (no CORS, no build step). The bare root
+**http://127.0.0.1:8000/** redirects there, so the base URL just works (the API
+docs remain at `/docs`). It's a manual test
 harness for the list interactions: search the Philly seed, create / rename /
 delete lists, add / move / remove restaurants, edit notes & tags, and record
 visits. The `X-User-Id` box in the header switches the acting user (blank = the
