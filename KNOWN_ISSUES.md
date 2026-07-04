@@ -1,0 +1,109 @@
+# Known Issues
+
+Running list of things worth fixing, grouped by area. Low-friction by design: append a
+one-liner in the same commit that discovers or introduces an issue. Promote an item to a
+[GitHub issue](https://github.com/ericre994/restaurant-project/issues) once you're ready to
+act on it (so a PR can `Fixes #N`), and check it off here when it lands.
+
+Tags: `(blocker)` gates other work · `(correctness)` wrong behavior / data · `(low)` minor /
+cleanup · `(decision)` needs a product/technical call before code · `(ux)` frontend / UX.
+Triage: **fix now** items are the current batch; **fix later** items are parked.
+
+Design docs are the source of truth — where an item mirrors a documented open question, the
+reference is noted so the two stay in sync.
+
+---
+
+## Backend
+
+- [ ] **No Postgres-specialized migration yet.** The initial Alembic migration is DB-agnostic
+  (JSON `embedding`, B-tree lat/lng). The Postgres follow-up — pgvector + `geography`/GIST
+  radius + GIN cuisine index — is unwritten and blocked on the embedding dimension `N`. (blocker)
+  — TDD §5.2
+- [ ] **JSON-column in-place mutation doesn't persist.** SQLAlchemy doesn't track in-place
+  edits to JSON columns; updates must reassign a new object (`log.user_feedback = {...}`).
+  Audit every JSON-column write (`recommendation_logs.user_feedback`, `attributes`, etc.) for
+  this footgun. (correctness) — CLAUDE.md
+- [ ] **TDD schema drift.** `list_items.tags`, `list_items.source`, and `visits.sentiment`
+  exist in `app/models.py` (required by PRD §4.1) but are absent from the TDD §5.1 tables.
+  Fold them back into the TDD so docs and code agree. (low) — CLAUDE.md
+- [ ] **Auth is a dev stub.** User comes from an `X-User-Id` header defaulting to a fixed dev
+  user. Real auth provider not chosen. Product-facing goal: **unique users / logins so each
+  person saves their own lists** (user: fix later). (decision) — TDD §9
+- [ ] **`token_usage` / `cost_estimate` always null** in `recommendation_logs` — stay null
+  until the prototype surfaces LLM usage. (low)
+- [ ] **Notes & tags belong to the restaurant, not the list item.** Today `note` / `tags` live
+  on the `list_items` row where they were created, so they don't follow a restaurant across
+  lists. Move them to a per-user-per-restaurant record so they're shared wherever the
+  restaurant appears. Data-model change + migration. **fix now** (correctness)
+- [ ] **Reject future-dated visits.** `POST /visits` should not accept a visit date after the
+  current day; validate server-side (and disable future dates in the log-visit modal).
+  **fix now** (correctness)
+
+## Prototype / Recommender
+
+- [ ] **`_sql_retrieve` tie-ordering** can differ from the prototype's `retrieve()` among exact
+  `rating` + `rating_count` ties. Verified to return the same candidate *set*; confirm the
+  order difference is harmless downstream. (low) — CLAUDE.md
+- [ ] **Real Anthropic API not yet exercised** end-to-end. The LLM ranking path is validated
+  offline only (`FAKE_LLM`); JSON-reliability failure rate against the live API is unmeasured.
+  (correctness) — PRD §3, TDD §9
+
+## Data pipeline
+
+- [ ] **No NYC data in the seed.** The Yelp Open Dataset has no NYC coverage, but NYC is the
+  PRD launch market. Philadelphia is the stand-in. Resolving this depends on the production
+  data-provider decision below. (blocker) — CLAUDE.md, PRD
+- [ ] **Yelp dataset is academic-use only** — fine for local dev, cannot ship to production.
+  Superseded once the production provider lands. (blocker) — CLAUDE.md, `YelpData/docs/`
+
+## Frontend / UX
+
+### Fix now
+- [ ] **Restaurant detail view.** Let users click into a restaurant to see hours, address, and
+  any additional data points (the seed already carries `attributes.hours`, `location`, `raw`).
+  (ux)
+- [ ] **Clear-search option.** Add a clear/reset control to the search input. (ux)
+- [ ] **Better add-to want-to-try vs. visited.** The current flow for choosing which core list
+  a restaurant goes into is clumsy — find a cleaner interaction. (ux)
+- [ ] **Fuzzy search on the Find Restaurants tab.** Tolerate typos / partial matches instead of
+  exact substring. (ux)
+- [ ] **More sort options in My Lists.** Sort a list's items by price, by tag, etc. (ux)
+- [ ] **Cuisine search bar rework.** It doesn't work well today — benchmark against other sites
+  and find a better approach. (ux)
+
+### Fix later
+- [ ] **Map feature.** Show restaurant locations on a map. (ux)
+- [ ] **Popup / modal boxes for fill-in sections.** Move inline fill-in fields into modals. (ux)
+- [ ] **UI update for the create-new-list flow.** (ux)
+
+> Two more items you wrote down landed in **Backend** because they're data-model / validation
+> changes, not just UI: *notes & tags belong to the restaurant* and *reject future-dated
+> visits* (both **fix now**). *Unique users / logins* is folded into the **Auth is a dev stub**
+> item (fix later).
+
+## Open decisions (block real migrations / launch)
+
+- [ ] **Production data provider** — Google Places vs. Yelp Fusion (coverage, ToS, unit
+  economics). Blocks NYC data and production readiness. (decision) — PRD Q1, TDD §9
+- [ ] **Embedding model & dimension `N`** — pick the model and fix `N` before the pgvector
+  migration. Until then `embedding` stays null and Stage 1 pre-ranks by rating. (decision)
+  — TDD §9
+- [ ] **Client platform** — native mobile vs. cross-platform. No client app exists yet.
+  (decision) — TDD §9
+- [ ] **Cold-start taste profile** — explicit quiz, import from Google Maps saves, or both.
+  (decision) — PRD Q2
+- [ ] **Availability polling & ToS** — is there a compliant Resy/OpenTable availability source
+  pre-partnership, and at what cadence? Gates the alerts feature. (decision) — PRD Q3, TDD §9
+- [ ] **"Visited" auto-detect** — location-based (with consent) vs. fully manual in MVP.
+  (decision) — PRD Q4
+- [ ] **Monetization direction** — subscription / booking referral / defer. Affects roadmap
+  sequencing. (decision) — PRD Q5
+
+---
+
+## Done
+
+<!-- Move checked items here with the PR number, e.g.:
+- [x] Short description — #12
+-->
