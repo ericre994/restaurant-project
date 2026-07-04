@@ -57,9 +57,15 @@ Saved as a durable preference so future sessions follow it. This file is the fir
 under the new convention. (Same-date sessions get a `-session-N-<topic>` suffix to
 avoid clobbering.)
 
+## 5. Committed & merged
+
+- Branched `docs/known-issues-tracker`, committed `KNOWN_ISSUES.md` + this log,
+  pushed, and opened **[PR #8](https://github.com/ericre994/restaurant-project/pull/8)**.
+- CI green (`test` passed); **squash-merged to `master` as `27c324b`**, branch
+  deleted, local `master` fast-forwarded. Docs-only change.
+
 ## Known follow-ups (not done this session)
 
-- Commit `KNOWN_ISSUES.md` (on a branch, per the PR workflow) — still uncommitted.
 - Optionally open a GitHub issue for the notes/tags-on-restaurant change (the most
   involved item — touches `models.py`, `list_items` schema, needs a migration).
 - Optionally add a pointer to `KNOWN_ISSUES.md` from `README.md` / `CLAUDE.md` for
