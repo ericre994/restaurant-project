@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import models, schemas, services
 from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/lists", tags=["lists"])
@@ -17,6 +17,32 @@ def _owned_list(db: Session, user: models.User, list_id: str) -> models.SavedLis
     if lst is None or lst.user_id != user.id:
         raise HTTPException(404, "List not found")
     return lst
+
+
+def _item_out(item: models.ListItem, note: Optional[models.RestaurantNote]) -> schemas.ListItemOut:
+    """Serialize a list item, hydrating note/tags from the shared RestaurantNote
+    (they no longer live on the item row)."""
+    data = schemas.ListItemOut.model_validate(item)
+    data.note = note.note if note else None
+    data.tags = (note.tags or []) if note else []
+    return data
+
+
+def _write_note_fields(
+    db: Session, user: models.User, restaurant_id: str, payload
+) -> None:
+    """If the request body carried note/tags, write them to the user's shared
+    note for this restaurant. Uses exclude_unset so an untouched field is left
+    alone (vs. explicitly sent null, which clears)."""
+    fields = payload.model_dump(exclude_unset=True)
+    if "note" in fields or "tags" in fields:
+        services.upsert_restaurant_note(
+            db,
+            user,
+            restaurant_id,
+            note=fields.get("note", services.UNSET),
+            tags=fields.get("tags", services.UNSET),
+        )
 
 
 def _find_item(db: Session, list_id: str, restaurant_id: str) -> Optional[models.ListItem]:
@@ -113,6 +139,7 @@ def get_items(
     PRD §4.1 cross-list filters (name search, cuisine, price, tag)."""
     lst = _owned_list(db, user, list_id)
     items = sorted(lst.items, key=lambda i: i.added_at, reverse=True)
+    notes = services.notes_map(db, user, (i.restaurant_id for i in items))
 
     def keep(item: models.ListItem) -> bool:
         r = item.restaurant
@@ -122,11 +149,14 @@ def get_items(
             return False
         if price_max is not None and (r.price_level or 99) > price_max:
             return False
-        if tag and tag.lower() not in [t.lower() for t in (item.tags or [])]:
-            return False
+        if tag:
+            note = notes.get(item.restaurant_id)
+            item_tags = [t.lower() for t in (note.tags if note else [])]
+            if tag.lower() not in item_tags:
+                return False
         return True
 
-    return [i for i in items if keep(i)]
+    return [_item_out(i, notes.get(i.restaurant_id)) for i in items if keep(i)]
 
 
 @router.post("/{list_id}/items", response_model=schemas.ListItemOut, status_code=201)
@@ -146,18 +176,18 @@ def add_item(
     item = models.ListItem(
         list_id=lst.id,
         restaurant_id=payload.restaurant_id,
-        note=payload.note,
-        tags=payload.tags or [],
         source=payload.source,
     )
     db.add(item)
+    # note/tags (if sent) go to the shared per-restaurant record, not the item.
+    _write_note_fields(db, user, payload.restaurant_id, payload)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "Restaurant already in this list")
     db.refresh(item)
-    return item
+    return _item_out(item, services.get_restaurant_note(db, user, item.restaurant_id))
 
 
 def _drop_from_sibling_core_list(
@@ -187,16 +217,20 @@ def update_item(
     user: models.User = Depends(get_current_user),
 ):
     """Edit a saved item's note / tags / source (PRD §4.1: annotate saves).
-    Partial update — only fields present in the body are changed."""
+    Partial update — only fields present in the body are changed. note/tags edit
+    the shared per-restaurant record (so the change shows on every list the
+    restaurant is in); `source` is per-save and edits this item."""
     lst = _owned_list(db, user, list_id)
     item = _find_item(db, lst.id, restaurant_id)
     if item is None:
         raise HTTPException(404, "Item not in list")
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(item, field, value)
+    fields = payload.model_dump(exclude_unset=True)
+    if "source" in fields:
+        item.source = fields["source"]
+    _write_note_fields(db, user, restaurant_id, payload)
     db.commit()
     db.refresh(item)
-    return item
+    return _item_out(item, services.get_restaurant_note(db, user, restaurant_id))
 
 
 @router.delete("/{list_id}/items/{restaurant_id}", status_code=204)
@@ -233,11 +267,11 @@ def move_item(
         db.delete(item)
         db.commit()
         db.refresh(existing)
-        return existing
+        return _item_out(existing, services.get_restaurant_note(db, user, restaurant_id))
     item.list_id = dst.id
     db.commit()
     db.refresh(item)
-    return item
+    return _item_out(item, services.get_restaurant_note(db, user, restaurant_id))
 
 
 def _core_list(db: Session, user: models.User, list_type: str) -> Optional[models.SavedList]:

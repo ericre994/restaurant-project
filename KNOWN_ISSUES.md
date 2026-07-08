@@ -24,7 +24,7 @@ reference is noted so the two stay in sync.
   edits to JSON columns; updates must reassign a new object (`log.user_feedback = {...}`).
   Audit every JSON-column write (`recommendation_logs.user_feedback`, `attributes`, etc.) for
   this footgun. (correctness) — CLAUDE.md
-- [ ] **TDD schema drift.** `list_items.tags`, `list_items.source`, and `visits.sentiment`
+- [ ] **TDD schema drift.** `restaurant_notes`, `list_items.source`, and `visits.sentiment`
   exist in `app/models.py` (required by PRD §4.1) but are absent from the TDD §5.1 tables.
   Fold them back into the TDD so docs and code agree. (low) — CLAUDE.md
 - [ ] **Auth is a dev stub.** User comes from an `X-User-Id` header defaulting to a fixed dev
@@ -32,13 +32,7 @@ reference is noted so the two stay in sync.
   person saves their own lists** (user: fix later). (decision) — TDD §9
 - [ ] **`token_usage` / `cost_estimate` always null** in `recommendation_logs` — stay null
   until the prototype surfaces LLM usage. (low)
-- [ ] **Notes & tags belong to the restaurant, not the list item.** Today `note` / `tags` live
-  on the `list_items` row where they were created, so they don't follow a restaurant across
-  lists. Move them to a per-user-per-restaurant record so they're shared wherever the
-  restaurant appears. Data-model change + migration. **fix now** (correctness)
-- [ ] **Reject future-dated visits.** `POST /visits` should not accept a visit date after the
-  current day; validate server-side (and disable future dates in the log-visit modal).
-  **fix now** (correctness)
+_Both **fix now** backend items shipped — see **Done** below._
 
 ## Prototype / Recommender
 
@@ -111,3 +105,13 @@ _All shipped — see **Done** below._
 - [x] **More sort options in My Lists.** Sort dropdown: recently added / name / price / rating / tag.
 - [x] **Cuisine search bar rework.** Typeahead backed by a new `GET /restaurants/cuisines`
   (distinct categories + counts); picking a suggestion searches immediately.
+
+### Backend — fix-now batch
+- [x] **Notes & tags belong to the restaurant, not the list item.** New `restaurant_notes` table
+  (one row per user+restaurant); note/tags follow a restaurant across every list. `/lists/{id}/items`
+  write-through + hydrate; direct `GET|PUT /restaurants/{id}/note`; `list_items.source` stays
+  per-save. Migration `a1b2c3d4e5f6` backfills (union tags, first non-empty note) then drops the
+  old columns; upgrade+downgrade exercised. Covered by `tests/test_restaurant_notes.py`.
+- [x] **Reject future-dated visits.** `POST /visits` 422s a `visited_at` dated after today (UTC,
+  compared by calendar date so earlier-today still passes); the log-visit modal sets the date
+  picker's `max` to today. Covered by `tests/test_visit_validation.py`.
