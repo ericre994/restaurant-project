@@ -21,18 +21,19 @@ The MVP scope is: natural-language recommendations, want-to-try / visited list m
 
 The central technical bet is the **recommendation pipeline**: rather than asking an LLM to search the world, the system pre-filters a small candidate set (15–20 restaurants) from a structured data source, then uses the LLM purely for ranking, scoring, and explanation. This keeps cost and latency bounded and predictable while still delivering the "it understands what I want" experience.
 
-### Implementation status (July 3, 2026)
+### Implementation status (July 8, 2026)
 
 A first vertical slice is implemented in `backend/` (FastAPI + SQLAlchemy) on top of the `prototype/` recommendation pipeline. The design below remains the target; this box records current reality and where it defers or stands in.
 
 **Built**
 
 - **List management** (§5.1): want-to-try / visited / custom lists, list items, visits — with list rename (`PATCH /lists/{id}`) and item edit (`PATCH /lists/{id}/items/{restaurant_id}`). A restaurant's `note`/`tags` are per-user-per-restaurant (`restaurant_notes`), shared across every list it's in and editable directly via `GET/PUT /restaurants/{id}/note`; `source` is per-save. The two core lists are **mutually exclusive**: adding a restaurant to one (by an explicit add or by recording a visit) evicts it from the other, while custom lists stay additive. Each visit is a separate row (and can't be dated in the future), so a restaurant keeps a visit history (`GET /visits?restaurant_id=`).
+- **Restaurant discovery / browse**: `GET /restaurants` search over the cache with a **typo-tolerant name match** (exact `ILIKE` first, then a `SequenceMatcher` + word-prefix fuzzy fallback when it underfills; `fuzzy=false` opts out), cuisine (`categories_text`) and `price_max` filters; `GET /restaurants/cuisines` returns distinct cuisines + counts for a search typeahead; `GET /restaurants/{id}` returns full detail including `attributes` (hours/features). Distinct from the recommendation pipeline's Stage-1 retrieval below.
 - **Recommendation pipeline** behind `POST /recommendations`, reusing `prototype/recommend.py` as the single source of truth for ranking/render. Stage 1 retrieval runs in SQL (price + geo bounding box + cuisine + rating pre-rank). The hallucination guard, one-shot repair retry, and rating-sorted fallback are implemented and tested.
 - **Feedback loop** (§4.5): every recommendation writes a `recommendation_logs` row; `POST /recommendations/{id}/feedback` records per-item actions.
 - **Taste profiles** (§4.5): `taste_profiles` is aggregated from visits + feedback; `derived_summary` is LLM-generated with a deterministic template fallback. Read by the pipeline per request (`GET/PUT /me/taste-profile`).
 - **Migrations** (§5.2): an initial Alembic migration is generated from the models covering all implemented list-management tables. It is DB-agnostic (JSON `embedding`, B-tree lat/lng), so it applies to both dev SQLite and Postgres; the Postgres specialization (pgvector, GIST, GIN) is a deferred follow-up (see below).
-- **Dev UI**: a single-page vanilla-JS harness served same-origin at `/app` (no CORS, no build step) exercises the list APIs — search, an add-to-list picker over core + custom lists, rename/edit, and multi-visit logging. It stands in for the not-yet-built client app and is explicitly a dev test tool, not production UI.
+- **Dev UI**: a single-page vanilla-JS harness served same-origin at `/app` (no CORS, no build step) exercises the browse + list APIs — typo-tolerant name search with a cuisine typeahead and a live price filter; a restaurant **detail view** (hours with today highlighted, features, and an "Open in Maps" link that resolves the actual business, not raw coordinates); a one-click **Want-to-Try** toggle, **Log visit** (date capped at today), and a custom-list picker in place of the old catch-all add-to dropdown; per-list sorting and clear-search. It stands in for the not-yet-built client app and is explicitly a dev test tool, not production UI.
 
 **Schema deltas folded into §5.1**: `restaurant_notes` (per-user-per-restaurant note + tags, shared across lists), `list_items.source`, `visits.sentiment` (required by PRD §4.1); plus dev-only derived columns on `restaurants` (`latitude`, `longitude`, `categories_text`) for SQLite indexing.
 
