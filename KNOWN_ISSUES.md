@@ -60,17 +60,7 @@ reference is noted so the two stay in sync.
 ## Frontend / UX
 
 ### Fix now
-- [ ] **Restaurant detail view.** Let users click into a restaurant to see hours, address, and
-  any additional data points (the seed already carries `attributes.hours`, `location`, `raw`).
-  (ux)
-- [ ] **Clear-search option.** Add a clear/reset control to the search input. (ux)
-- [ ] **Better add-to want-to-try vs. visited.** The current flow for choosing which core list
-  a restaurant goes into is clumsy — find a cleaner interaction. (ux)
-- [ ] **Fuzzy search on the Find Restaurants tab.** Tolerate typos / partial matches instead of
-  exact substring. (ux)
-- [ ] **More sort options in My Lists.** Sort a list's items by price, by tag, etc. (ux)
-- [ ] **Cuisine search bar rework.** It doesn't work well today — benchmark against other sites
-  and find a better approach. (ux)
+_All shipped — see **Done** below._
 
 ### Fix later
 - [ ] **Map feature.** Show restaurant locations on a map. (ux)
@@ -107,3 +97,17 @@ reference is noted so the two stay in sync.
 <!-- Move checked items here with the PR number, e.g.:
 - [x] Short description — #12
 -->
+
+### Frontend / UX — fix-now batch (dev harness `backend/app/static/index.html`)
+- [x] **Restaurant detail view.** Click a restaurant name (lookup or a list) to open a modal
+  with address (+ Google Maps link), cuisine chips, formatted hours (today highlighted), and
+  feature chips. `attributes` exposed on `RestaurantOut`; `GET /restaurants/{id}` serves it.
+- [x] **Clear-search option.** "Clear" button resets name/cuisine/price and results.
+- [x] **Better add-to want-to-try vs. visited.** Replaced the catch-all "Add to…" dropdown with
+  a one-click **＋ Want to Try** toggle + **Log visit** (→ Visited) + a compact custom-list picker.
+- [x] **Fuzzy search on Find Restaurants.** `GET /restaurants?q=` falls back to typo-tolerant
+  matching (prefix bonus + `SequenceMatcher` ratio) when exact substring underfills. `fuzzy=false`
+  opts out. Covered by `tests/test_restaurants.py`.
+- [x] **More sort options in My Lists.** Sort dropdown: recently added / name / price / rating / tag.
+- [x] **Cuisine search bar rework.** Typeahead backed by a new `GET /restaurants/cuisines`
+  (distinct categories + counts); picking a suggestion searches immediately.
