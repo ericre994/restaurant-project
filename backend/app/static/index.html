@@ -424,9 +424,23 @@ function renderDetail(r) {
   const attrs = r.attributes || {};
   const badges = badgeHtml(r.id);
   const vline = visitLine(r.id);
+  // Google Maps link. Search by name + address, but biased to the exact coords
+  // via the /@lat,lng,zoom suffix: a listed restaurant opens straight to its
+  // business card (photos, hours, reviews), and an unlisted one (e.g. a food
+  // truck) still centers on the right block instead of scattering across the
+  // region — which a plain ?query=name,address does. Coordinates are [lng, lat].
   const coords = r.location && r.location.coordinates;
-  const mapLink = coords
-    ? `<a href="https://www.google.com/maps/search/?api=1&query=${coords[1]},${coords[0]}" target="_blank" rel="noopener">Open in Maps ↗</a>`
+  const label = [r.name, r.address].filter(Boolean).join(", ");
+  let mapsHref = "";
+  if (label && coords) {
+    mapsHref = `https://www.google.com/maps/search/${encodeURIComponent(label)}/@${coords[1]},${coords[0]},16z`;
+  } else if (label) {
+    mapsHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(label)}`;
+  } else if (coords) {
+    mapsHref = `https://www.google.com/maps/search/?api=1&query=${coords[1]},${coords[0]}`;
+  }
+  const mapLink = mapsHref
+    ? `<a href="${mapsHref}" target="_blank" rel="noopener">Open in Maps ↗</a>`
     : "";
   body.innerHTML =
     `<h3>${esc(r.name)} ${badges}</h3>` +
