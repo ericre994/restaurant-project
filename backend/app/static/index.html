@@ -260,13 +260,21 @@ async function addToList(restaurantId, listId) {
 }
 
 // ---- Visit modal ----
+// Local (not UTC) YYYY-MM-DD for today, used as the date picker's max so future
+// visits can't be selected. The server enforces this too (POST /visits 422s).
+function todayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 function openVisit(restaurantId, name) {
   state.pendingVisit = { restaurantId, name };
   document.getElementById("visit-modal-sub").textContent = name;
   document.getElementById("v-sentiment").value = "";
   document.getElementById("v-rating").value = "";
   document.getElementById("v-notes").value = "";
-  document.getElementById("v-date").value = "";
+  const dateEl = document.getElementById("v-date");
+  dateEl.value = "";
+  dateEl.max = todayLocalISO();   // no future dates in the picker
   document.getElementById("visit-modal").classList.add("show");
 }
 function closeVisit() {
@@ -283,7 +291,10 @@ async function submitVisit() {
   if (s) body.sentiment = s;
   if (r) body.user_rating = Number(r);
   if (notes) body.notes = notes;
-  if (date) body.visited_at = new Date(date + "T12:00:00").toISOString();
+  if (date) {
+    if (date > todayLocalISO()) return toast("Visit date can't be in the future", true);
+    body.visited_at = new Date(date + "T12:00:00").toISOString();
+  }
   const name = state.pendingVisit.name;
   try {
     await api("POST", "/visits", body);

@@ -1,5 +1,6 @@
 """Visit endpoints (TDD §6: POST /visits). Recording a visit also reconciles the
 core lists: the restaurant leaves Want-to-Try and joins Visited (PRD §4.1)."""
+from datetime import timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,14 @@ from ..deps import get_current_user, get_db
 router = APIRouter(tags=["visits"])
 
 
+def _is_future_date(visited_at) -> bool:
+    """True if `visited_at` falls on a calendar day after today (UTC). Compares
+    dates, not instants, so logging a visit for earlier today is always allowed
+    even if the client sent a noon timestamp that is technically ahead of `now`."""
+    vt = visited_at if visited_at.tzinfo else visited_at.replace(tzinfo=timezone.utc)
+    return vt.astimezone(timezone.utc).date() > models.utcnow().date()
+
+
 @router.post("/visits", response_model=schemas.VisitOut, status_code=201)
 def record_visit(
     payload: schemas.VisitCreate,
@@ -22,6 +31,8 @@ def record_visit(
         raise HTTPException(404, "Restaurant not found")
     if payload.sentiment is not None and payload.sentiment not in models.SENTIMENTS:
         raise HTTPException(422, f"sentiment must be one of {models.SENTIMENTS}")
+    if payload.visited_at is not None and _is_future_date(payload.visited_at):
+        raise HTTPException(422, "visited_at cannot be in the future")
 
     visit = models.Visit(
         user_id=user.id,

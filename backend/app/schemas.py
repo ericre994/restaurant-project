@@ -32,6 +32,9 @@ class CuisineOut(BaseModel):
 
 
 class ListItemOut(BaseModel):
+    # note/tags are hydrated from the per-user-per-restaurant RestaurantNote, not
+    # read off the list_item row (they moved there) — the router sets them.
+    # `source` is genuinely per-save, so it stays on the list_item.
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -41,6 +44,26 @@ class ListItemOut(BaseModel):
     source: Optional[str] = None
     added_at: datetime
     restaurant: Optional[RestaurantOut] = None
+
+
+class RestaurantNoteOut(BaseModel):
+    """A user's shared note + tags for a restaurant. Empty (note=None, tags=[])
+    when the user hasn't annotated it yet."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    restaurant_id: str
+    note: Optional[str] = None
+    tags: List[str] = []
+    updated_at: Optional[datetime] = None
+
+
+class RestaurantNoteUpdate(BaseModel):
+    """Set a restaurant's note/tags for the current user. Omitted fields are left
+    unchanged (partial update); send note: null to clear it."""
+
+    note: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class ListOut(BaseModel):
