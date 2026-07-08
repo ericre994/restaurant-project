@@ -115,14 +115,17 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 | PATCH  | `/lists/{id}` | Rename a custom list (`name`; core lists are protected) |
 | DELETE | `/lists/{id}` | Delete a custom list (core lists are protected) |
 | GET    | `/lists/{id}/items` | Items, hydrated; filters: `q`, `cuisine`, `price_max`, `tag` |
-| POST   | `/lists/{id}/items` | Add a restaurant (`restaurant_id`, `note`, `tags`, `source`); adding to a core list evicts it from the sibling core list |
-| PATCH  | `/lists/{id}/items/{restaurant_id}` | Edit a saved item's `note` / `tags` / `source` (partial) |
+| POST   | `/lists/{id}/items` | Add a restaurant (`restaurant_id`, `source`; `note`/`tags` write through to the shared per-restaurant note); adding to a core list evicts it from the sibling core list |
+| PATCH  | `/lists/{id}/items/{restaurant_id}` | Edit `source` (per-item); `note`/`tags` edit the shared per-restaurant note (partial) |
 | DELETE | `/lists/{id}/items/{restaurant_id}` | Remove a restaurant from a list |
 | POST   | `/lists/{id}/items/{restaurant_id}/move` | Move to another list (`to_list_id`) |
-| POST   | `/visits` | Record a visit (`sentiment`, `user_rating`, `notes`, `visited_at`); one row per visit — log as many as you like |
+| POST   | `/visits` | Record a visit (`sentiment`, `user_rating`, `notes`, `visited_at`); `visited_at` after today is rejected (422); one row per visit — log as many as you like |
 | GET    | `/visits` | Visit history; optional `restaurant_id` filters to one restaurant |
-| GET    | `/restaurants` | Search the seed (`q`, `cuisine`, `price_max`, `limit`) |
-| GET    | `/restaurants/{id}` | Restaurant detail |
+| GET    | `/restaurants` | Search the seed (`q` — typo-tolerant, `fuzzy=false` to opt out; `cuisine`, `price_max`, `limit`) |
+| GET    | `/restaurants/cuisines` | Distinct cuisines + counts for the search typeahead (`q` filters) |
+| GET    | `/restaurants/{id}` | Restaurant detail (includes `attributes`: hours/features) |
+| GET    | `/restaurants/{id}/note` | The current user's shared note + tags for a restaurant (empty when unset) |
+| PUT    | `/restaurants/{id}/note` | Set the current user's note/tags for a restaurant — shared across every list it's in (partial) |
 | POST   | `/recommendations` | Run the retrieve→rank→render pipeline (`query`, `near`/`lat`+`lng`, `radius_km`, `price_max`, `cuisine`, `open_now`, `party_size`); writes a log row, returns its `recommendation_id` |
 | POST   | `/recommendations/{id}/feedback` | Record per-item feedback (`restaurant_id`, `action`) — saved / dismissed / visited / thumbs_up / thumbs_down |
 | GET    | `/recommendations/{id}` | Inspect a logged recommendation (provenance + feedback) |
@@ -138,7 +141,14 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 - **Recording a visit reconciles lists.** `POST /visits` removes the restaurant
   from Want-to-Try and adds it to Visited (PRD: marking visited is one action).
   Each call logs a separate visit row, so a restaurant can have a full visit
-  history (fetch it with `GET /visits?restaurant_id=...`).
+  history (fetch it with `GET /visits?restaurant_id=...`). A `visited_at` dated
+  after today is rejected (compared by calendar date, so earlier-today is fine).
+- **Notes & tags belong to the restaurant, not the list.** They live on
+  `restaurant_notes` (one row per user+restaurant), so a note written on a
+  restaurant in Want-to-Try shows on that same restaurant in any custom list. The
+  list-item endpoints accept/return `note`/`tags` for convenience, but the source
+  of truth is the shared record — edit it directly via `GET|PUT /restaurants/{id}/note`.
+  `source` is the exception: it's per-save and stays on the list item.
 - **Auth is a dev stub.** The user is taken from an `X-User-Id` header, defaulting
   to a fixed dev user. Real auth is a TDD open question — swap `deps.get_current_user`
   when decided.

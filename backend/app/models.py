@@ -1,11 +1,17 @@
 """SQLAlchemy models for the list-management slice of the data model.
 
 Mirrors TDD §5.1 tables: users, restaurants, lists, list_items, visits.
-Two deliberate extensions to the draft schema, both required by PRD §4.1:
-  - list_items.tags   (cuisine / neighborhood / occasion tags on want-to-try)
-  - list_items.source (attribution: "saved from a friend", "saw on Instagram")
+Deliberate extensions to the draft schema, all required by PRD §4.1:
+  - restaurant_notes  (per-user-per-restaurant note + tags — shared across every
+                       list a restaurant appears in, not tied to one list_item)
+  - list_items.source (attribution: "saved from a friend", "saw on Instagram" —
+                       genuinely per-save, so it stays on the list_item)
   - visits.sentiment  (1-tap loved / liked / wouldnt_return — highest taste signal)
 These should be folded back into the TDD (still a draft) so docs and code agree.
+
+Note & tags used to live on `list_items`, which meant they didn't follow a
+restaurant across lists; they now live on `restaurant_notes` (one row per
+user+restaurant). See migration a1b2c3d4e5f6.
 
 Annotations use typing.Optional/List (not PEP 604 `X | None`) so the mapped
 classes resolve on Python 3.9, which this environment runs.
@@ -140,18 +146,43 @@ class ListItem(Base):
     restaurant_id: Mapped[str] = mapped_column(
         ForeignKey("restaurants.id"), index=True
     )
-    note: Mapped[Optional[str]] = mapped_column(Text)
-    tags: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    # note & tags moved to RestaurantNote (per user+restaurant, shared across
+    # lists). `source` is the attribution for THIS particular save, so it stays.
     source: Mapped[Optional[str]] = mapped_column(String)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    # Named parent_list (not `list`) so it doesn't shadow the builtin `list`,
-    # which would break the `tags: Mapped[Optional[list]]` annotation above.
+    # Named parent_list (not `list`) so it doesn't shadow the builtin `list`.
     parent_list: Mapped["SavedList"] = relationship(back_populates="items")
     restaurant: Mapped["Restaurant"] = relationship()
 
     # A restaurant can appear at most once per list (TDD §5.1 list_items).
     __table_args__ = (UniqueConstraint("list_id", "restaurant_id", name="uq_listitem"),)
+
+
+class RestaurantNote(Base):
+    """A user's private note + tags for a restaurant (PRD §4.1). One row per
+    (user, restaurant), so the annotation follows the restaurant across every
+    list it appears in — Want-to-Try, Visited, or any custom list."""
+
+    __tablename__ = "restaurant_notes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    restaurant_id: Mapped[str] = mapped_column(
+        ForeignKey("restaurants.id"), index=True
+    )
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    tags: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    restaurant: Mapped["Restaurant"] = relationship()
+
+    # At most one note per user per restaurant.
+    __table_args__ = (
+        UniqueConstraint("user_id", "restaurant_id", name="uq_restaurant_note"),
+    )
 
 
 class Visit(Base):

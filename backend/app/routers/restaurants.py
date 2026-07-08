@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
-from ..deps import get_db
+from .. import models, schemas, services
+from ..deps import get_current_user, get_db
 
 router = APIRouter(prefix="/restaurants", tags=["restaurants"])
 
@@ -125,9 +125,42 @@ def get_restaurant(restaurant_id: str, db: Session = Depends(get_db)):
     return r
 
 
-@router.get("/{restaurant_id}", response_model=schemas.RestaurantOut)
-def get_restaurant(restaurant_id: str, db: Session = Depends(get_db)):
-    r = db.get(models.Restaurant, restaurant_id)
-    if r is None:
+@router.get("/{restaurant_id}/note", response_model=schemas.RestaurantNoteOut)
+def get_restaurant_note(
+    restaurant_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """The current user's shared note + tags for a restaurant. Returns an empty
+    note (note=null, tags=[]) rather than 404 when none exists yet — the client
+    can render an editable blank."""
+    if db.get(models.Restaurant, restaurant_id) is None:
         raise HTTPException(404, "Restaurant not found")
-    return r
+    note = services.get_restaurant_note(db, user, restaurant_id)
+    if note is None:
+        return schemas.RestaurantNoteOut(restaurant_id=restaurant_id, tags=[])
+    return note
+
+
+@router.put("/{restaurant_id}/note", response_model=schemas.RestaurantNoteOut)
+def put_restaurant_note(
+    restaurant_id: str,
+    payload: schemas.RestaurantNoteUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Set the current user's note/tags for a restaurant. Shared across every list
+    the restaurant appears in (PRD §4.1). Partial update via exclude_unset."""
+    if db.get(models.Restaurant, restaurant_id) is None:
+        raise HTTPException(404, "Restaurant not found")
+    fields = payload.model_dump(exclude_unset=True)
+    note = services.upsert_restaurant_note(
+        db,
+        user,
+        restaurant_id,
+        note=fields.get("note", services.UNSET),
+        tags=fields.get("tags", services.UNSET),
+    )
+    db.commit()
+    db.refresh(note)
+    return note

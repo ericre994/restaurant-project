@@ -1,8 +1,14 @@
 """Cross-cutting helpers: dev-user provisioning and core-list management."""
+from typing import Dict, Iterable, Optional
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import models
+
+# Sentinel for partial-update args: distinguishes "field omitted" (leave as-is)
+# from "field set to None" (clear it). Callers pass UNSET for untouched fields.
+UNSET = object()
 
 # Auth is undecided (TDD open question). For local dev we identify the user via
 # an X-User-Id header and fall back to this fixed dev user when none is given.
@@ -38,3 +44,56 @@ def ensure_core_lists(db: Session, user: models.User) -> None:
         if list_type not in existing:
             db.add(models.SavedList(user_id=user.id, type=list_type, name=name))
     db.flush()
+
+
+# ---- Per-restaurant notes (shared across a user's lists) -------------------
+
+def get_restaurant_note(
+    db: Session, user: models.User, restaurant_id: str
+) -> Optional[models.RestaurantNote]:
+    return db.scalar(
+        select(models.RestaurantNote).where(
+            models.RestaurantNote.user_id == user.id,
+            models.RestaurantNote.restaurant_id == restaurant_id,
+        )
+    )
+
+
+def notes_map(
+    db: Session, user: models.User, restaurant_ids: Iterable[str]
+) -> Dict[str, models.RestaurantNote]:
+    """{restaurant_id: RestaurantNote} for the given restaurants, for bulk
+    hydration of list items without an N+1 query."""
+    ids = list(restaurant_ids)
+    if not ids:
+        return {}
+    rows = db.scalars(
+        select(models.RestaurantNote).where(
+            models.RestaurantNote.user_id == user.id,
+            models.RestaurantNote.restaurant_id.in_(ids),
+        )
+    )
+    return {n.restaurant_id: n for n in rows}
+
+
+def upsert_restaurant_note(
+    db: Session,
+    user: models.User,
+    restaurant_id: str,
+    note=UNSET,
+    tags=UNSET,
+) -> models.RestaurantNote:
+    """Create or update the user's note for a restaurant. Only the fields passed
+    (i.e. not UNSET) are written, so a caller can touch tags without clearing the
+    note. The row is flushed but not committed — the caller owns the transaction."""
+    rec = get_restaurant_note(db, user, restaurant_id)
+    if rec is None:
+        rec = models.RestaurantNote(user_id=user.id, restaurant_id=restaurant_id, tags=[])
+        db.add(rec)
+    if note is not UNSET:
+        rec.note = note
+    if tags is not UNSET:
+        rec.tags = tags or []
+    rec.updated_at = models.utcnow()
+    db.flush()
+    return rec
