@@ -490,8 +490,10 @@ function renderLookup() {
   const onEnter = e => { if (e.key === "Enter") searchRestaurants(); };
   document.getElementById("s-q").addEventListener("keydown", onEnter);
   document.getElementById("s-cuisine").addEventListener("keydown", onEnter);
-  // Picking a cuisine from the datalist searches immediately.
+  // Picking a cuisine or price searches immediately (a filter should feel live,
+  // not require a separate Search click).
   document.getElementById("s-cuisine").addEventListener("change", () => searchRestaurants());
+  document.getElementById("s-price").addEventListener("change", () => searchRestaurants());
   loadCuisines();     // populate the datalist (cheap; cached in state after first call)
   renderResults();
 }
