@@ -115,3 +115,12 @@ _All shipped — see **Done** below._
 - [x] **TDD schema drift folded in.** TDD §5.1 now documents `restaurant_notes`, `list_items.source`,
   and `visits.sentiment` (dropped the moved-out `list_items.tags`); §6 lists the `/restaurants/{id}/note`
   + `/restaurants/cuisines` endpoints; bumped to v0.4.
+
+### Follow-up bug fixes (found while testing the batch)
+- [x] **Price filter didn't apply until Search was re-clicked** — #13. The cuisine input auto-searched
+  on `change` but the price `<select>` had no handler, so picking a price did nothing. Added a matching
+  `change` listener; the filter now applies live. (Backend `price_max` was correct all along.)
+- [x] **Maps link opened raw coordinates, not the restaurant** — #14. "Open in Maps" used
+  `?query=lat,lng` (bare pin / nearest-business reverse-geocode). Now searches name + address biased to
+  the coordinates (`/maps/search/<name, address>/@lat,lng,16z`): a listed restaurant opens straight to
+  its business card, an unlisted one still centers on the right block instead of scattering region-wide.
