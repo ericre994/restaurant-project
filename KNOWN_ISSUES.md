@@ -24,9 +24,6 @@ reference is noted so the two stay in sync.
   edits to JSON columns; updates must reassign a new object (`log.user_feedback = {...}`).
   Audit every JSON-column write (`recommendation_logs.user_feedback`, `attributes`, etc.) for
   this footgun. (correctness) — CLAUDE.md
-- [ ] **TDD schema drift.** `restaurant_notes`, `list_items.source`, and `visits.sentiment`
-  exist in `app/models.py` (required by PRD §4.1) but are absent from the TDD §5.1 tables.
-  Fold them back into the TDD so docs and code agree. (low) — CLAUDE.md
 - [ ] **Auth is a dev stub.** User comes from an `X-User-Id` header defaulting to a fixed dev
   user. Real auth provider not chosen. Product-facing goal: **unique users / logins so each
   person saves their own lists** (user: fix later). (decision) — TDD §9
@@ -115,3 +112,6 @@ _All shipped — see **Done** below._
 - [x] **Reject future-dated visits.** `POST /visits` 422s a `visited_at` dated after today (UTC,
   compared by calendar date so earlier-today still passes); the log-visit modal sets the date
   picker's `max` to today. Covered by `tests/test_visit_validation.py`.
+- [x] **TDD schema drift folded in.** TDD §5.1 now documents `restaurant_notes`, `list_items.source`,
+  and `visits.sentiment` (dropped the moved-out `list_items.tags`); §6 lists the `/restaurants/{id}/note`
+  + `/restaurants/cuisines` endpoints; bumped to v0.4.

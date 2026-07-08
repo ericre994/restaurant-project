@@ -5,8 +5,8 @@
 | ---------------- | ------------------------------------------------------------------------------------------------ |
 | **Status**       | Draft — MVP slice partially implemented                                                          |
 | **Author**       | Eric                                                                                             |
-| **Version**      | 0.3                                                                                              |
-| **Last updated** | July 3, 2026                                                                                     |
+| **Version**      | 0.4                                                                                              |
+| **Last updated** | July 8, 2026                                                                                     |
 | **Reviewers**    | *TBD*                                                                                            |
 | **Related docs** | PRD, Cost & Unit Economics Model, API ToS Review, Privacy & Data Handling Notes, Product Roadmap, Git/CI Setup |
 
@@ -27,14 +27,14 @@ A first vertical slice is implemented in `backend/` (FastAPI + SQLAlchemy) on to
 
 **Built**
 
-- **List management** (§5.1): want-to-try / visited / custom lists, list items, visits — with list rename (`PATCH /lists/{id}`) and item edit (`PATCH /lists/{id}/items/{restaurant_id}`, note/tags/source). The two core lists are **mutually exclusive**: adding a restaurant to one (by an explicit add or by recording a visit) evicts it from the other, while custom lists stay additive. Each visit is a separate row, so a restaurant keeps a visit history (`GET /visits?restaurant_id=`).
+- **List management** (§5.1): want-to-try / visited / custom lists, list items, visits — with list rename (`PATCH /lists/{id}`) and item edit (`PATCH /lists/{id}/items/{restaurant_id}`). A restaurant's `note`/`tags` are per-user-per-restaurant (`restaurant_notes`), shared across every list it's in and editable directly via `GET/PUT /restaurants/{id}/note`; `source` is per-save. The two core lists are **mutually exclusive**: adding a restaurant to one (by an explicit add or by recording a visit) evicts it from the other, while custom lists stay additive. Each visit is a separate row (and can't be dated in the future), so a restaurant keeps a visit history (`GET /visits?restaurant_id=`).
 - **Recommendation pipeline** behind `POST /recommendations`, reusing `prototype/recommend.py` as the single source of truth for ranking/render. Stage 1 retrieval runs in SQL (price + geo bounding box + cuisine + rating pre-rank). The hallucination guard, one-shot repair retry, and rating-sorted fallback are implemented and tested.
 - **Feedback loop** (§4.5): every recommendation writes a `recommendation_logs` row; `POST /recommendations/{id}/feedback` records per-item actions.
 - **Taste profiles** (§4.5): `taste_profiles` is aggregated from visits + feedback; `derived_summary` is LLM-generated with a deterministic template fallback. Read by the pipeline per request (`GET/PUT /me/taste-profile`).
 - **Migrations** (§5.2): an initial Alembic migration is generated from the models covering all implemented list-management tables. It is DB-agnostic (JSON `embedding`, B-tree lat/lng), so it applies to both dev SQLite and Postgres; the Postgres specialization (pgvector, GIST, GIN) is a deferred follow-up (see below).
 - **Dev UI**: a single-page vanilla-JS harness served same-origin at `/app` (no CORS, no build step) exercises the list APIs — search, an add-to-list picker over core + custom lists, rename/edit, and multi-visit logging. It stands in for the not-yet-built client app and is explicitly a dev test tool, not production UI.
 
-**Schema deltas folded into §5.1**: `list_items.tags`, `list_items.source`, `visits.sentiment` (required by PRD §4.1); plus dev-only derived columns on `restaurants` (`latitude`, `longitude`, `categories_text`) for SQLite indexing.
+**Schema deltas folded into §5.1**: `restaurant_notes` (per-user-per-restaurant note + tags, shared across lists), `list_items.source`, `visits.sentiment` (required by PRD §4.1); plus dev-only derived columns on `restaurants` (`latitude`, `longitude`, `categories_text`) for SQLite indexing.
 
 **Deferred / dev stand-ins** (consistent with the open questions in §9)
 
@@ -277,11 +277,27 @@ Invariant: a restaurant is in at most one of the two **core** lists at a time �
 | id            | uuid PK               |                                |
 | list_id       | uuid FK → lists       |                                |
 | restaurant_id | uuid FK → restaurants |                                |
-| note          | text                  |                                |
-| tags          | jsonb                 | cuisine / neighborhood / occasion tags (PRD §4.1) |
-| source        | text                  | attribution: "saved from a friend", "saw on Instagram" |
+| source        | text                  | attribution for *this* save: "saved from a friend", "saw on Instagram" — genuinely per-membership, so it lives here |
 | added_at      | timestamptz           |                                |
 |               |                       | UNIQUE(list_id, restaurant_id) |
+
+`note` and `tags` are **not** on this table: a user's annotation is a property of the *restaurant*, not of one list membership, so it lives on `restaurant_notes` (below) and follows the restaurant across every list it appears in.
+
+
+**restaurant_notes**
+
+
+| Column        | Type                  | Notes                          |
+| ------------- | --------------------- | ------------------------------ |
+| id            | uuid PK               |                                |
+| user_id       | uuid FK → users       |                                |
+| restaurant_id | uuid FK → restaurants |                                |
+| note          | text                  | free-text note                 |
+| tags          | jsonb                 | cuisine / neighborhood / occasion tags (PRD §4.1) |
+| updated_at    | timestamptz           |                                |
+|               |                       | UNIQUE(user_id, restaurant_id) |
+
+One note per user per restaurant, shared across Want-to-Try, Visited, and every custom list the restaurant is in. The `/lists/{id}/items` endpoints accept and hydrate `note`/`tags` for convenience (write-through to this table), and it's editable directly via `GET/PUT /restaurants/{id}/note`.
 
 
 **visits**
@@ -297,6 +313,8 @@ Invariant: a restaurant is in at most one of the two **core** lists at a time �
 | user_rating   | int                   | the user's own rating |
 | notes         | text                  |                       |
 | created_at    | timestamptz           |                       |
+
+Invariant: `visited_at` must not be after today (a visit can't be logged for a future day). Enforced in application logic (compared by calendar date, so an earlier-today timestamp is still accepted).
 
 
 **reservations**
@@ -365,6 +383,7 @@ Invariant: a restaurant is in at most one of the two **core** lists at a time �
 ### 5.3 Notable design choices
 
 - **Restaurant caching** decouples us from provider latency/rate limits and gives a stable internal id used everywhere else (lists, visits, reservations, logs).
+- **Notes/tags on `restaurant_notes`, not `list_items`.** An annotation ("great for groups", "get the tasting menu") describes a restaurant, not a particular list membership. Keying it on (user, restaurant) means it survives moving a restaurant between lists and shows everywhere the restaurant appears. `source` is the deliberate exception — where a save came from *is* per-membership, so it stays on `list_items`.
 - **JSONB attributes** absorb provider-shaped, evolving fields without schema churn, while frequently-filtered fields are promoted to typed columns.
 - **pgvector embeddings** power both candidate pre-ranking and "more like this" without an external vector store.
 - **recommendation_logs** is a first-class feedback substrate, not just analytics — it directly feeds taste-profile refinement.
@@ -382,9 +401,11 @@ Invariant: a restaurant is in at most one of the two **core** lists at a time �
 | POST                | `/recommendations/{id}/feedback` | Record per-item feedback                           |
 | GET / POST          | `/lists`                         | List / create lists                                |
 | PATCH / DELETE      | `/lists/{id}`                    | Rename / delete a custom list (core lists protected) |
-| GET/POST/PATCH/DELETE | `/lists/{id}/items`            | Manage items: add (evicts from the sibling core list), edit note/tags/source, move, remove |
-| GET / POST          | `/visits`                        | Record a visit / list visit history (optional `?restaurant_id=`) |
-| GET                 | `/restaurants` · `/restaurants/{id}` | Search the cache / restaurant detail          |
+| GET/POST/PATCH/DELETE | `/lists/{id}/items`            | Manage items: add (evicts from the sibling core list), edit `source` + write-through `note`/`tags`, move, remove |
+| GET / POST          | `/visits`                        | Record a visit (rejects future `visited_at`) / list visit history (optional `?restaurant_id=`) |
+| GET                 | `/restaurants` · `/restaurants/{id}` | Search the cache (typo-tolerant `q`, `cuisine`, `price_max`) / restaurant detail |
+| GET                 | `/restaurants/cuisines`          | Distinct cuisines + counts for the search typeahead |
+| GET / PUT           | `/restaurants/{id}/note`         | Read / set the current user's shared note + tags for a restaurant |
 | POST                | `/reservations`                  | Create reservation intent → returns deep link      |
 | GET / POST / DELETE | `/availability-alerts`           | Manage alerts                                      |
 
