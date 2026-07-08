@@ -41,6 +41,12 @@
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   button.primary:hover { filter: brightness(1.08); }
   button.tiny { padding: 2px 7px; font-size: 12px; }
+  button.want { border-color: var(--ok); color: var(--ok); font-weight: 600; }
+  button.want:hover { background: #e7f6ec; }
+  button.want.saved { background: var(--ok); color: #fff; border-color: var(--ok); }
+  button.want.saved:hover { filter: brightness(1.06); background: var(--ok); }
+  button.link { border: none; background: none; padding: 0; color: inherit; cursor: pointer; text-align: left; }
+  button.link:hover { background: none; text-decoration: underline; }
   input, select, textarea { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
   select.addto { max-width: 150px; }
   .list-row { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
@@ -77,11 +83,27 @@
   }
   .modal-backdrop.show { display: flex; }
   .modal { background: #fff; border-radius: 12px; padding: 20px; width: 380px; max-width: 92vw; }
+  .modal.wide { width: 520px; }
   .modal h3 { margin: 0 0 4px; }
   .modal .field { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
   .modal .field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-  @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } .search-filters { grid-template-columns: 1fr; } }
+  .modal .close-x { float: right; border: none; background: none; font-size: 20px; line-height: 1; color: var(--muted); cursor: pointer; padding: 0; }
+  .modal .close-x:hover { color: var(--ink); background: none; }
+  /* Detail view */
+  .detail-sub { color: var(--muted); margin: 2px 0 12px; }
+  .detail-sec { margin-top: 14px; }
+  .detail-sec h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .hours-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; font-size: 13px; }
+  .hours-grid .day { color: var(--muted); }
+  .hours-grid .today { font-weight: 700; color: var(--ink); }
+  .hours-grid .today .day, .hours-grid .today.day { color: var(--ink); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: #eef; color: #3a3a8a; border-radius: 12px; padding: 2px 10px; font-size: 12px; }
+  .kv { font-size: 13px; }
+  .kv b { font-weight: 600; }
+  .detail-scroll { max-height: 62vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+  @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } .search-filters { grid-template-columns: 1fr; } .modal.wide { width: 92vw; } }
 </style>
 </head>
 <body>
@@ -136,6 +158,14 @@
   </div>
 </div>
 
+<!-- Restaurant detail modal -->
+<div class="modal-backdrop" id="detail-modal">
+  <div class="modal wide">
+    <button class="close-x" onclick="closeDetail()" title="Close">×</button>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -146,6 +176,10 @@ const state = {
   visitsByRestaurant: {},   // restaurant_id -> [visits]
   savedIn: {},              // restaurant_id -> Set(list types) for badges on lookup
   pendingVisit: null,       // {restaurantId, name}
+  cuisines: [],             // [{name, count}] for the search-bar typeahead
+  itemSort: "added",        // My Lists sort key: added|name|price|rating|tag
+  detailCache: {},          // restaurant_id -> full restaurant record (with attributes)
+  search: { q: "", cuisine: "", price: "" },  // persisted so a re-render (e.g. after a save) keeps the query
 };
 
 // ---- API helper (same-origin; optional X-User-Id header) ----
@@ -211,31 +245,14 @@ async function loadCore() {
   state.savedIn = saved;
 }
 
-// ---- Add-to picker (shared) ----
-function addToSelect(restaurantId) {
-  const sel = document.createElement("select");
-  sel.className = "addto";
-  const core = state.lists.filter(l => l.type === "want_to_try" || l.type === "visited");
-  const custom = state.lists.filter(l => l.type === "custom");
-  let opts = `<option value="">Add to…</option>`;
-  opts += core.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("");
-  if (custom.length) {
-    opts += `<optgroup label="Custom lists">` +
-      custom.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("") + `</optgroup>`;
-  }
-  sel.innerHTML = opts;
-  sel.onchange = () => { if (sel.value) addToList(restaurantId, sel.value); sel.value = ""; };
-  return sel;
-}
+// ---- Add-to custom list (core lists have dedicated Want-to-Try / Log-visit buttons) ----
 async function addToList(restaurantId, listId) {
   const l = state.lists.find(x => x.id === listId);
   try {
     await api("POST", `/lists/${listId}/items`, { restaurant_id: restaurantId });
     await loadCore();
     render();
-    const note = (l && (l.type === "want_to_try" || l.type === "visited"))
-      ? ` (core lists are exclusive)` : "";
-    toast(`Added to “${l ? l.name : "list"}”${note}`);
+    toast(`Added to “${l ? l.name : "list"}”`);
   } catch (e) {
     if (String(e.message).includes("already in this list")) toast("Already in that list");
     else toast("Add failed: " + e.message, true);
@@ -283,6 +300,146 @@ function visitLine(restaurantId) {
   return `Visited ${vs.length}× ${last ? "· last " + last : ""}`;
 }
 
+// ---- Core-list helpers ----
+const coreListId = type => (state.lists.find(l => l.type === type) || {}).id;
+const isSavedIn = (restaurantId, type) => (state.savedIn[restaurantId] || new Set()).has(type);
+
+// Want-to-Try toggle: one-click save, click again to unsave. Clearer than the
+// old catch-all "Add to…" dropdown that mixed core lists with custom ones.
+async function toggleWantToTry(restaurantId, name) {
+  const listId = coreListId("want_to_try");
+  if (!listId) return toast("No Want-to-Try list", true);
+  try {
+    if (isSavedIn(restaurantId, "want_to_try")) {
+      await api("DELETE", `/lists/${listId}/items/${restaurantId}`);
+      await loadCore(); render(); toast(`Removed “${name}” from Want to Try`);
+    } else {
+      await api("POST", `/lists/${listId}/items`, { restaurant_id: restaurantId });
+      await loadCore(); render(); toast(`Saved “${name}” to Want to Try`);
+    }
+  } catch (e) {
+    if (String(e.message).includes("already in this list")) { await loadCore(); render(); }
+    else toast("Failed: " + e.message, true);
+  }
+}
+function wantButton(restaurantId, name) {
+  const saved = isSavedIn(restaurantId, "want_to_try");
+  const b = document.createElement("button");
+  b.className = "want" + (saved ? " saved" : "");
+  b.textContent = saved ? "✓ Want to Try" : "＋ Want to Try";
+  b.title = saved ? "Remove from Want to Try" : "Save to Want to Try";
+  b.onclick = () => toggleWantToTry(restaurantId, name);
+  return b;
+}
+// Compact picker for CUSTOM lists only (core lists have dedicated buttons now).
+function customListSelect(restaurantId) {
+  const custom = state.lists.filter(l => l.type === "custom");
+  if (!custom.length) return null;
+  const sel = document.createElement("select");
+  sel.className = "addto";
+  sel.innerHTML = `<option value="">＋ Add to list…</option>` +
+    custom.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("");
+  sel.onchange = () => { if (sel.value) addToList(restaurantId, sel.value); sel.value = ""; };
+  return sel;
+}
+
+// ---- Cuisine typeahead ----
+async function loadCuisines() {
+  try {
+    if (!state.cuisines.length) state.cuisines = await api("GET", "/restaurants/cuisines?limit=60");
+    const dl = document.getElementById("cuisine-options");
+    if (dl) dl.innerHTML = state.cuisines
+      .map(c => `<option value="${esc(c.name)}">${c.count} places</option>`).join("");
+  } catch (e) { /* non-fatal: search still works without suggestions */ }
+}
+
+// ---- Restaurant detail view ----
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const _todayName = () => DAYS[new Date().getDay()];
+function fmtTime(t) { // "7:0" / "20:30" -> "7:00 AM" / "8:30 PM"
+  const [hRaw, mRaw] = String(t).split(":");
+  let h = parseInt(hRaw, 10); const m = (mRaw || "0").padStart(2, "0");
+  const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+  return `${h}:${m} ${ap}`;
+}
+function hoursHtml(hours) {
+  if (!hours || !Object.keys(hours).length) return `<span class="muted">No hours on file.</span>`;
+  const today = _todayName();
+  return `<div class="hours-grid">` + DAYS.map(d => {
+    const v = hours[d];
+    const span = v ? v.split("-").map(fmtTime).join(" – ") : "Closed";
+    const cls = d === today ? " today" : "";
+    return `<div class="day${cls}">${d}</div><div class="${cls.trim()}">${esc(span)}</div>`;
+  }).join("") + `</div>`;
+}
+// Human labels for the raw Yelp feature keys worth surfacing.
+const FEATURE_LABELS = {
+  RestaurantsTakeOut: "Takeout", RestaurantsDelivery: "Delivery",
+  OutdoorSeating: "Outdoor seating", RestaurantsReservations: "Reservations",
+  RestaurantsGoodForGroups: "Good for groups", GoodForKids: "Good for kids",
+  BusinessAcceptsCreditCards: "Cards accepted", BikeParking: "Bike parking",
+  WheelchairAccessible: "Wheelchair accessible", HasTV: "Has TV", Caters: "Caters",
+  DogsAllowed: "Dogs allowed",
+};
+function featureChips(features) {
+  if (!features) return "";
+  const chips = [];
+  for (const [k, label] of Object.entries(FEATURE_LABELS)) {
+    if (features[k] === true) chips.push(label);
+  }
+  if (typeof features.WiFi === "string" && features.WiFi !== "no" && features.WiFi !== "none")
+    chips.push(`WiFi (${features.WiFi.replace(/^u?'|'$/g, "")})`);
+  if (typeof features.Alcohol === "string" && features.Alcohol !== "none")
+    chips.push(features.Alcohol.replace(/^u?'|'$/g, "").replace(/_/g, " "));
+  const parking = features.BusinessParking && Object.entries(features.BusinessParking)
+    .filter(([, v]) => v === true).map(([k]) => k);
+  if (parking && parking.length) chips.push("Parking: " + parking.join(", "));
+  if (!chips.length) return `<span class="muted">No feature data.</span>`;
+  return `<div class="chips">` + chips.map(c => `<span class="chip">${esc(c)}</span>`).join("") + `</div>`;
+}
+async function openDetail(restaurantId) {
+  document.getElementById("detail-modal").classList.add("show");
+  const body = document.getElementById("detail-body");
+  let r = state.detailCache[restaurantId];
+  if (!r || !r.attributes) {
+    body.innerHTML = `<p class="muted">Loading…</p>`;
+    try { r = await api("GET", `/restaurants/${restaurantId}`); state.detailCache[restaurantId] = r; }
+    catch (e) { body.innerHTML = `<p class="muted">Couldn't load details: ${esc(e.message)}</p>`; return; }
+  }
+  renderDetail(r);
+}
+function renderDetail(r) {
+  const body = document.getElementById("detail-body");
+  const attrs = r.attributes || {};
+  const badges = badgeHtml(r.id);
+  const vline = visitLine(r.id);
+  const coords = r.location && r.location.coordinates;
+  const mapLink = coords
+    ? `<a href="https://www.google.com/maps/search/?api=1&query=${coords[1]},${coords[0]}" target="_blank" rel="noopener">Open in Maps ↗</a>`
+    : "";
+  body.innerHTML =
+    `<h3>${esc(r.name)} ${badges}</h3>` +
+    `<div class="detail-sub">${price(r.price_level)} · ★${r.rating ?? "—"} (${r.rating_count ?? 0} reviews)` +
+      `${vline ? " · " + vline : ""}</div>` +
+    `<div class="detail-scroll">` +
+      (r.address ? `<div class="detail-sec"><h4>Address</h4><div class="kv">${esc(r.address)} ${mapLink}</div></div>` : "") +
+      (r.categories && r.categories.length
+        ? `<div class="detail-sec"><h4>Cuisine</h4><div class="chips">` +
+          r.categories.map(c => `<span class="chip">${esc(c)}</span>`).join("") + `</div></div>` : "") +
+      `<div class="detail-sec"><h4>Hours</h4>${hoursHtml(attrs.hours)}</div>` +
+      `<div class="detail-sec"><h4>Features</h4>${featureChips(attrs.features)}</div>` +
+    `</div>` +
+    `<div class="modal-actions"></div>`;
+  // Action buttons that mutate lists — reuse the shared controls.
+  const acts = body.querySelector(".modal-actions");
+  acts.appendChild(wantButton(r.id, r.name));
+  const visit = document.createElement("button");
+  visit.textContent = (state.visitsByRestaurant[r.id] || []).length ? "Log another visit" : "Log visit";
+  visit.onclick = () => { closeDetail(); openVisit(r.id, r.name); };
+  acts.appendChild(visit);
+}
+function closeDetail() { document.getElementById("detail-modal").classList.remove("show"); }
+
 // ---- Router ----
 function render() {
   const hash = location.hash || "#/lookup";
@@ -301,20 +458,40 @@ function renderLookup() {
     <div class="panel">
       <h2>Find restaurants (Philadelphia seed)</h2>
       <div class="search-filters">
-        <input id="s-q" placeholder="Name contains…" />
-        <input id="s-cuisine" placeholder="Cuisine" />
+        <input id="s-q" placeholder="Name (typo-tolerant)…" value="${esc(state.search.q)}" />
+        <input id="s-cuisine" list="cuisine-options" placeholder="Cuisine — type or pick…" autocomplete="off" value="${esc(state.search.cuisine)}" />
         <select id="s-price">
           <option value="">Any price</option>
           <option value="1">$</option><option value="2">$$</option>
           <option value="3">$$$</option><option value="4">$$$$</option>
         </select>
-        <button class="primary" id="s-go">Search</button>
+        <div class="row">
+          <button class="primary" id="s-go">Search</button>
+          <button id="s-clear" title="Clear search">Clear</button>
+        </div>
       </div>
+      <datalist id="cuisine-options"></datalist>
       <div id="search-results"></div>
     </div>`;
+  document.getElementById("s-price").value = state.search.price;   // restore across re-renders
   document.getElementById("s-go").onclick = searchRestaurants;
-  document.getElementById("s-q").addEventListener("keydown", e => { if (e.key === "Enter") searchRestaurants(); });
+  document.getElementById("s-clear").onclick = clearSearch;
+  const onEnter = e => { if (e.key === "Enter") searchRestaurants(); };
+  document.getElementById("s-q").addEventListener("keydown", onEnter);
+  document.getElementById("s-cuisine").addEventListener("keydown", onEnter);
+  // Picking a cuisine from the datalist searches immediately.
+  document.getElementById("s-cuisine").addEventListener("change", () => searchRestaurants());
+  loadCuisines();     // populate the datalist (cheap; cached in state after first call)
   renderResults();
+}
+function clearSearch() {
+  document.getElementById("s-q").value = "";
+  document.getElementById("s-cuisine").value = "";
+  document.getElementById("s-price").value = "";
+  state.search = { q: "", cuisine: "", price: "" };
+  state.results = null;
+  renderResults();
+  document.getElementById("s-q").focus();
 }
 function renderResults() {
   const el = document.getElementById("search-results");
@@ -323,21 +500,36 @@ function renderResults() {
   if (!state.results.length) { el.innerHTML = `<p class="muted">No matches.</p>`; return; }
   el.innerHTML = "";
   for (const r of state.results) {
+    state.detailCache[r.id] = r;   // search rows already carry attributes — reuse for the detail modal
     const card = document.createElement("div");
     card.className = "card";
     const badges = badgeHtml(r.id);
-    card.innerHTML =
-      `<div class="row"><span class="title grow">${esc(r.name)} ${badges}</span>` +
-      `<span class="muted">${price(r.price_level)} · ★${r.rating ?? "—"} (${r.rating_count ?? 0})</span></div>` +
-      `<div class="meta">${esc((r.categories || []).join(", "))}</div>`;
+    const titleRow = document.createElement("div");
+    titleRow.className = "row";
+    const title = document.createElement("button");
+    title.className = "link title grow";
+    title.innerHTML = `${esc(r.name)} ${badges}`;
+    title.title = "View details";
+    title.onclick = () => openDetail(r.id);
+    titleRow.appendChild(title);
+    const meta = document.createElement("span");
+    meta.className = "muted";
+    meta.textContent = `${price(r.price_level)} · ★${r.rating ?? "—"} (${r.rating_count ?? 0})`;
+    titleRow.appendChild(meta);
+    card.appendChild(titleRow);
+    card.insertAdjacentHTML("beforeend", `<div class="meta">${esc((r.categories || []).join(", "))}</div>`);
     const line = visitLine(r.id);
-    if (line) card.innerHTML += `<div class="visits">${line}</div>`;
+    if (line) card.insertAdjacentHTML("beforeend", `<div class="visits">${line}</div>`);
+
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.appendChild(addToSelect(r.id));
-    const visit = document.createElement("button"); visit.className = "tiny"; visit.textContent = "Log visit";
+    actions.appendChild(wantButton(r.id, r.name));
+    const visit = document.createElement("button");
+    visit.textContent = (state.visitsByRestaurant[r.id] || []).length ? "Log another visit" : "🍽 Log visit";
     visit.onclick = () => openVisit(r.id, r.name);
     actions.appendChild(visit);
+    const custom = customListSelect(r.id);
+    if (custom) actions.appendChild(custom);
     card.appendChild(actions);
     el.appendChild(card);
   }
@@ -353,6 +545,7 @@ async function searchRestaurants() {
   const q = document.getElementById("s-q").value.trim();
   const cuisine = document.getElementById("s-cuisine").value.trim();
   const priceMax = document.getElementById("s-price").value;
+  state.search = { q, cuisine, price: priceMax };   // persist so a later re-render keeps the query
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (cuisine) params.set("cuisine", cuisine);
@@ -380,6 +573,14 @@ function renderLists() {
       <div class="col">
         <div class="panel">
           <div class="row"><h2 id="items-title" class="grow">Items</h2>
+            <label class="muted" style="font-size:12px">Sort
+              <select id="list-sort">
+                <option value="added">Recently added</option>
+                <option value="name">Name (A–Z)</option>
+                <option value="price">Price (low→high)</option>
+                <option value="rating">Rating (high→low)</option>
+                <option value="tag">Tag</option>
+              </select></label>
             <input id="list-filter" placeholder="Filter by name…" /></div>
           <div id="items"></div>
         </div>
@@ -390,8 +591,28 @@ function renderLists() {
   const f = document.getElementById("list-filter");
   f.value = state.listFilter;
   f.addEventListener("input", () => { state.listFilter = f.value; renderItems(); });
+  const sortSel = document.getElementById("list-sort");
+  sortSel.value = state.itemSort;
+  sortSel.addEventListener("change", () => { state.itemSort = sortSel.value; renderItems(); });
   renderSidebar();
   renderItems();
+}
+// Sort a list's items by the chosen key. Names/prices/ratings come off the joined
+// restaurant record; "tag" groups by first tag so tagged items cluster together.
+function sortItems(items) {
+  const rname = it => ((it.restaurant && it.restaurant.name) || "").toLowerCase();
+  const cmp = {
+    added: (a, b) => new Date(b.added_at) - new Date(a.added_at),
+    name: (a, b) => rname(a).localeCompare(rname(b)),
+    price: (a, b) => ((a.restaurant && a.restaurant.price_level) || 99) - ((b.restaurant && b.restaurant.price_level) || 99),
+    rating: (a, b) => ((b.restaurant && b.restaurant.rating) || 0) - ((a.restaurant && a.restaurant.rating) || 0),
+    tag: (a, b) => {
+      const ta = (a.tags && a.tags[0] || "￿").toLowerCase();
+      const tb = (b.tags && b.tags[0] || "￿").toLowerCase();
+      return ta.localeCompare(tb) || rname(a).localeCompare(rname(b));
+    },
+  }[state.itemSort] || (() => 0);
+  return items.slice().sort(cmp);
 }
 function renderSidebar() {
   const el = document.getElementById("lists");
@@ -441,24 +662,37 @@ async function renderItems() {
     el.innerHTML = `<p class="muted">${state.listFilter ? "No items match the filter." : "Empty. Add restaurants from Find Restaurants."}</p>`;
     return;
   }
+  items = sortItems(items);
   el.innerHTML = "";
   for (const it of items) {
     const r = it.restaurant || {};
+    if (r.id) state.detailCache[r.id] = r;
     const card = document.createElement("div");
     card.className = "card";
-    let html =
-      `<div class="row"><span class="title grow">${esc(r.name)}</span>` +
-      `<span class="muted">${price(r.price_level)} · ★${r.rating ?? "—"}</span></div>` +
-      `<div class="meta">${esc((r.categories || []).join(", "))}</div>`;
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "row";
+    const title = document.createElement("button");
+    title.className = "link title grow";
+    title.textContent = r.name || "";
+    title.title = "View details";
+    title.onclick = () => openDetail(it.restaurant_id);
+    titleRow.appendChild(title);
+    titleRow.insertAdjacentHTML("beforeend",
+      `<span class="muted">${price(r.price_level)} · ★${r.rating ?? "—"}</span>`);
+    card.appendChild(titleRow);
+
+    let html = `<div class="meta">${esc((r.categories || []).join(", "))}</div>`;
     if (it.note) html += `<div class="note">“${esc(it.note)}”</div>`;
     if (it.tags && it.tags.length) html += `<div class="tags">${it.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>`;
     const vline = visitLine(it.restaurant_id);
     if (vline) html += `<div class="visits">${vline}</div>`;
-    card.innerHTML = html;
+    card.insertAdjacentHTML("beforeend", html);
 
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.appendChild(addToSelect(it.restaurant_id));
+    const custom = customListSelect(it.restaurant_id);
+    if (custom) actions.appendChild(custom);
 
     const edit = document.createElement("button"); edit.className = "tiny"; edit.textContent = "Edit note/tags";
     edit.onclick = () => editItem(l.id, it); actions.appendChild(edit);
@@ -513,10 +747,22 @@ async function removeItem(listId, restaurantId) {
   catch (e) { toast("Remove failed: " + e.message, true); }
 }
 
+// ---- Modal UX: click backdrop or press Escape to close ----
+for (const id of ["visit-modal", "detail-modal"]) {
+  document.getElementById(id).addEventListener("click", e => {
+    if (e.target.id === id) { id === "visit-modal" ? closeVisit() : closeDetail(); }
+  });
+}
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  closeVisit(); closeDetail();
+});
+
 // ---- Boot ----
 async function boot() {
   await loadUser();
   await loadCore();
+  await loadCuisines();
   render();
 }
 boot();

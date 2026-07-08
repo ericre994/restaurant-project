@@ -21,6 +21,14 @@ class RestaurantOut(BaseModel):
     rating: Optional[float] = None
     rating_count: Optional[int] = None
     location: Optional[dict] = None
+    attributes: Optional[dict] = None     # {features, hours} — populated on the detail endpoint
+
+
+class CuisineOut(BaseModel):
+    """A distinct cuisine category and how many seeded restaurants carry it."""
+
+    name: str
+    count: int
 
 
 class ListItemOut(BaseModel):
