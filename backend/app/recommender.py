@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from math import cos, radians
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -186,8 +186,9 @@ def recommend(
 ) -> RecommendationResult:
     """Run the pipeline and return the picks plus everything the log needs.
 
-    `mode` is 'llm', 'llm-repair', or a 'fallback (...)' string — fallback when
-    no ANTHROPIC_API_KEY is set or the LLM call/parse fails (PRD reliability req).
+    `mode` is 'llm', 'llm-repair', or a 'heuristic (...)' string — the offline
+    personalized ranker runs when no ANTHROPIC_API_KEY is set or the LLM
+    call/parse fails (PRD reliability req).
     """
     coords = _resolve_location(db, near, lat, lng)
     constraints = proto.Constraints(
