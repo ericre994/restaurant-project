@@ -28,21 +28,22 @@ There is no single product that closes the loop from *intent* (want to try) → 
 
 Be the system of record for a user's dining life: a place where saved intent compounds into a taste profile, and that taste profile powers recommendations that feel like they came from a friend who knows you, then gets you a table.
 
-### 1.4 Implementation status (July 8, 2026)
+### 1.4 Implementation status (July 13, 2026)
 
 An early backend slice is built (FastAPI; see the Technical Design Doc's Implementation status). This tracks MVP feature progress; targets and metrics below are unchanged.
 
 | Feature | Status |
 | ------- | ------ |
+| **User accounts** — email/password signup & login, hashed passwords, persisted sessions, so each person's lists are private and resume next visit | **Built** (backend + dev web UI login gate) |
 | List management — want-to-try / visited / custom lists; per-restaurant notes & tags (shared across lists), save `source`, visit sentiment; list rename, item edit, core-list exclusivity, multi-visit history with future-date rejection (§4.1) | **Built** (backend + dev web UI) |
 | Restaurant discovery / browse — typo-tolerant name search, cuisine typeahead, price filter, and a detail view (hours, features, map link to the actual place) (§4.1) | **Built** (backend + dev web UI) |
-| AI natural-language recommendations + reliability guards (§4.2) | **Built** (backend; LLM path validated offline, real API not yet exercised) |
+| AI natural-language recommendations + reliability guards; **personalized offline ranking** (taste + query + price + distance) when the LLM is off; **ZIP / neighborhood** location resolution derived from the data (§4.2) | **Built** (backend; LLM path validated offline, real API not yet exercised) |
 | Taste profile from visits + feedback (§4.2) | **Built** (backend) |
 | Reservation availability alerts (§4.3) | Not started |
 | Reservation deep-linking (§4.4) | Not started |
 | Weekly recap / newsletter (§4.5) | Not started |
 
-Caveats: data is the academic-use-only Yelp Open Dataset (Philadelphia, **no NYC coverage**) for dev only; the only client so far is a dev-only web UI harness (served at `/app`) for exercising the browse + list APIs — not the planned production mobile app; persistence is dev SQLite modeling the planned Postgres schema, with Alembic migrations (the latest moving notes/tags to a per-restaurant table).
+Caveats: data is the academic-use-only Yelp Open Dataset (Philadelphia, **no NYC coverage**) for dev only; the only client so far is a dev-only web UI harness (served at `/app`, now behind a login/sign-up gate) for exercising the browse + list APIs — not the planned production mobile app; persistence is dev SQLite modeling the planned Postgres schema, with Alembic migrations (the latest adding user accounts — `password_hash` + a `sessions` table).
 
 ---
 
@@ -111,7 +112,7 @@ Users describe what they want in plain language ("cozy spot for a third date in 
 **Reliability requirements**
 
 - Hallucination guard: the LLM may only rank/reason over candidates supplied in the prompt, and never invents restaurants. Output validated against the candidate ID list.
-- JSON schema validation with retry-on-malformed-output; graceful fallback to a non-AI sorted list if the pipeline fails.
+- JSON schema validation with retry-on-malformed-output; graceful fallback if the pipeline fails (or no LLM is configured) to a **personalized non-AI ranking** — candidates scored by taste-profile fit, query keywords, price comfort, and distance — so the fallback still reflects the user rather than a flat rating sort.
 - Low temperature for ranking consistency.
 - P95 end-to-end latency target: ≤6 seconds from query to rendered cards.
 
