@@ -18,8 +18,9 @@ Usage
   python recommend.py --demo date_night
   python recommend.py --query "cheap late-night ramen near Chinatown, casual"
 
-If no API key is set (or the call fails), it falls back to a rating-sorted
-list so you still see the retrieval stage working.
+If no API key is set (or the call fails), it falls back to a deterministic
+personalized ranker (taste + query + price + distance + rating), so you still
+get real recommendations offline.
 """
 from __future__ import annotations
 
@@ -363,10 +364,10 @@ def parse_picks(raw: str, valid_ids: set[str]) -> list[dict]:
 
 def rank(query: str, profile: TasteProfile, candidates: list[dict],
          c: Constraints) -> tuple[list[dict], str]:
-    """Returns (picks, mode). mode is 'llm', 'llm-repair', or 'fallback'."""
+    """Returns (picks, mode). mode is 'llm', 'llm-repair', or 'heuristic (...)'."""
     valid_ids = {r["id"] for r in candidates}
     if not os.getenv("ANTHROPIC_API_KEY") and not _fake_llm_enabled():
-        return _fallback(candidates), "fallback (no API key)"
+        return _heuristic_rank(candidates, profile, query, c), "heuristic (no API key)"
 
     messages = assemble_messages(query, profile, candidates, c)
     try:
@@ -381,17 +382,155 @@ def rank(query: str, profile: TasteProfile, candidates: list[dict],
             ]
             return parse_picks(call_llm(repair), valid_ids), "llm-repair"
         except Exception as e2:
-            print(f"[warn] LLM ranking failed ({e2}); using fallback.", file=sys.stderr)
-            return _fallback(candidates), "fallback (llm error)"
+            print(f"[warn] LLM ranking failed ({e2}); using heuristic.", file=sys.stderr)
+            return _heuristic_rank(candidates, profile, query, c), "heuristic (llm error)"
 
 
-def _fallback(candidates: list[dict]) -> list[dict]:
-    """Design doc 4.1.2: graceful fallback to pre-ranking order."""
+# --------------------------------------------------------------------------
+# Offline personalized ranker — Stage 2 without the LLM (design doc 4.1.2)
+# --------------------------------------------------------------------------
+# When no LLM is available (no API key, or the call failed) we still return a
+# *real* recommendation, not just "highest rated". This deterministic ranker
+# scores each candidate against the diner's taste profile, the query, price
+# comfort, distance, and review quality — the graceful fallback, upgraded from a
+# plain rating sort so the offline path actually personalizes.
+
+# Query words that carry no ranking signal — dropped before keyword matching.
+_QUERY_STOPWORDS = {
+    "a", "an", "and", "the", "for", "with", "near", "some", "something",
+    "place", "spot", "restaurant", "food", "eat", "want", "looking", "good",
+    "nice", "me", "my", "we", "our", "to", "in", "of", "on", "at", "or",
+    "around", "somewhere", "that", "this", "please", "im", "i", "get", "go",
+}
+
+# Query keyword -> the compact-candidate feature flag it implies, so a query
+# like "patio and cocktails" can reward candidates that actually have them.
+_FEATURE_KEYWORDS = {
+    "outdoor": "outdoor_seating", "patio": "outdoor_seating",
+    "outside": "outdoor_seating", "alfresco": "outdoor_seating",
+    "wine": "alcohol", "cocktail": "alcohol", "cocktails": "alcohol",
+    "drinks": "alcohol", "bar": "alcohol", "beer": "alcohol", "booze": "alcohol",
+    "takeout": "takeout", "delivery": "takeout", "togo": "takeout",
+}
+_FEATURE_PHRASE = {
+    "outdoor_seating": "outdoor seating",
+    "alcohol": "a full bar",
+    "takeout": "takeout",
+}
+
+# Component weights (a weighted average — distance is dropped and the rest
+# renormalize when the request has no location; cuisine/price/query drop out
+# when that signal is absent, e.g. cold-start with no taste profile).
+_W_CUISINE, _W_QUERY, _W_PRICE, _W_RATING, _W_DISTANCE = 0.35, 0.25, 0.15, 0.15, 0.10
+
+
+def _truthy(v: Any) -> bool:
+    """Yelp feature flags arrive as real bools or literal strings ('True')."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "yes", "1")
+    return bool(v)
+
+
+def _query_tokens(query: str) -> list[str]:
+    words = re.findall(r"[a-z0-9]+", (query or "").lower())
+    return [w for w in words if len(w) >= 3 and w not in _QUERY_STOPWORDS]
+
+
+def _score_candidate(r: dict, profile: TasteProfile, tokens: list[str],
+                     c: Constraints) -> tuple[int, list[str]]:
+    """Deterministic 0-100 fit score + short reasons for one candidate. `tokens`
+    is the pre-parsed query keyword list (parsed once by the caller)."""
+    cats = [str(x) for x in (r.get("categories") or [])]
+    cats_blob = " ".join(cats).lower()
+    name_blob = (r.get("name") or "").lower()
+    reasons: list[str] = []
+    parts: list[tuple[float, float]] = []  # (component_score_0_1, weight)
+
+    # 1. Cuisine fit against the learned taste weights.
+    pref = profile.cuisines_preferred or {}
+    if pref:
+        matched = [(cat, pref[cat]) for cat in cats if cat in pref]
+        if matched:
+            top = max(pref.values()) or 1.0
+            cuisine_score = min(1.0, sum(w for _, w in matched) / top)
+            names = [cat for cat, _ in sorted(matched, key=lambda kv: kv[1], reverse=True)]
+            reasons.append("matches your taste for " + ", ".join(names[:2]))
+        else:
+            cuisine_score = 0.0
+        parts.append((cuisine_score, _W_CUISINE))
+
+    # 2. Query keyword fit (categories, name, and implied features).
+    if tokens:
+        hits = 0
+        feat_flags: list[str] = []
+        for tok in tokens:
+            flag = _FEATURE_KEYWORDS.get(tok)
+            if flag and _truthy(r.get(flag)):
+                hits += 1
+                if flag not in feat_flags:
+                    feat_flags.append(flag)
+            elif tok in cats_blob or tok in name_blob:
+                hits += 1
+        parts.append((min(1.0, hits * 0.4), _W_QUERY))
+        if feat_flags:
+            reasons.append("has " + ", ".join(_FEATURE_PHRASE[f] for f in feat_flags[:2]))
+
+    # 3. Price comfort.
+    price = r.get("price_level")
+    band = profile.price_pref or []
+    if price is not None and band:
+        if price in band:
+            parts.append((1.0, _W_PRICE))
+            reasons.append("in your usual " + "$" * price + " range")
+        else:
+            gap = min(abs(price - b) for b in band)
+            parts.append((max(0.0, 1.0 - 0.4 * gap), _W_PRICE))
+
+    # 4. Review quality (volume-shrunk so 5.0-from-3-reviews doesn't win).
+    rating = r.get("rating")
+    if rating is not None:
+        n = r.get("rating_count") or 0
+        adj = (rating * n + 3.5 * 20) / (n + 20)  # shrink toward a 3.5 prior
+        parts.append((max(0.0, min(1.0, adj / 5.0)), _W_RATING))
+        if rating >= 4.3 and n >= 25:
+            reasons.append(f"{rating}★ across {n} reviews")
+
+    # 5. Distance (only when the request carried a location).
+    dist = r.get("distance_km")
+    if dist is not None and c.radius_km:
+        parts.append((max(0.0, 1.0 - dist / c.radius_km), _W_DISTANCE))
+        if dist <= c.radius_km:
+            reasons.append(f"{dist} km away")
+
+    score = round(100 * sum(s * w for s, w in parts) / sum(w for _, w in parts)) if parts else 0
+    if not reasons:  # never render a card with no explanation
+        reasons.append(
+            f"{rating}★ ({r.get('rating_count') or 0} reviews)"
+            if rating is not None else "meets your filters"
+        )
+    return score, reasons[:3]
+
+
+def _heuristic_rank(candidates: list[dict], profile: TasteProfile, query: str,
+                    c: Constraints, limit: int = 6) -> list[dict]:
+    """Design doc 4.1.2 graceful fallback, personalized: score every candidate
+    against taste + query + price + distance + quality, best-first. Deterministic
+    and offline (no LLM) — it's what the API serves until the LLM is enabled."""
+    tokens = _query_tokens(query)
+    scored = []
+    for r in candidates:
+        score, reasons = _score_candidate(r, profile, tokens, c)
+        scored.append((score, r, reasons))
+    # Best score first; break ties by review quality then id (deterministic).
+    scored.sort(
+        key=lambda t: (t[0], t[1].get("rating") or 0, t[1].get("rating_count") or 0, t[1]["id"]),
+        reverse=True,
+    )
     return [
-        {"restaurant_id": r["id"],
-         "match_score": None,
-         "reasons": [f'{r.get("rating")}★ from {r.get("rating_count")} reviews']}
-        for r in candidates[:6]
+        {"restaurant_id": r["id"], "match_score": score, "reasons": reasons}
+        for score, r, reasons in scored[:limit]
     ]
 
 

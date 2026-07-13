@@ -6,7 +6,7 @@
 
 Thin HTTP layer over `app.recommender`, which runs the prototype pipeline
 against the DB. Works with or without an ANTHROPIC_API_KEY — without one, it
-returns the rating-sorted fallback (PRD §4.2 reliability requirement).
+returns the offline personalized ranking (PRD §4.2 reliability requirement).
 
 Neighborhood landmarks accepted by `near` (from the prototype): chinatown,
 center city, rittenhouse, fishtown, south philly, university city, old city.
