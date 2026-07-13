@@ -32,6 +32,7 @@ def _seed_restaurants():
             price_level=2, rating=4.5, rating_count=100,
             location={"type": "Point", "coordinates": [-75.1555, 39.9554]},
             latitude=39.9554, longitude=-75.1555,
+            address="1 Market St, Philadelphia, PA, 19107",
         )
     )
     db.add(
@@ -41,6 +42,7 @@ def _seed_restaurants():
             price_level=3, rating=4.8, rating_count=50,
             location={"type": "Point", "coordinates": [-75.1500, 39.9560]},
             latitude=39.9560, longitude=-75.1500,
+            address="2 Arch St, Philadelphia, PA, 19107",
         )
     )
     db.add(
@@ -50,6 +52,7 @@ def _seed_restaurants():
             price_level=1, rating=5.0, rating_count=10,
             location={"type": "Point", "coordinates": [-80.0000, 40.4400]},
             latitude=40.4400, longitude=-80.0000,
+            address="3 Forbes Ave, Pittsburgh, PA, 15213",
         )
     )
     db.commit()

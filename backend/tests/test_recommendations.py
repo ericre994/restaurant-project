@@ -24,12 +24,12 @@ def test_recommendations_returns_ranked_candidates(client):
         assert pick["restaurant"]["id"] == pick["restaurant_id"]
 
 
-def test_unknown_landmark_is_rejected(client):
+def test_unknown_location_is_rejected(client):
     resp = client.post(
         "/recommendations", json={"query": "dinner", "near": "atlantis"}
     )
     assert resp.status_code == 422
-    assert "unknown landmark" in resp.text
+    assert "unknown location" in resp.text
 
 
 def test_price_filter_narrows_candidates(client):
