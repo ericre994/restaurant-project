@@ -29,8 +29,10 @@ import math
 import os
 import re
 import sys
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +48,9 @@ PROMPT_VERSION = "proto-v1"
 CANDIDATE_CAP = 18          # design doc: 15-20
 DEFAULT_RADIUS_KM = 4.0
 
-# A few neighborhood centroids so --near works without geocoding.
+# A few neighborhood centroids so --near works even with no seed loaded. These
+# are a static fallback: when the seed (or DB) is available, the GeoIndex below
+# supersedes them with centroids derived from the data and far broader coverage.
 LANDMARKS = {
     "chinatown":       (39.9554, -75.1555),
     "center city":     (39.9518, -75.1652),
@@ -56,6 +60,135 @@ LANDMARKS = {
     "university city": (39.9522, -75.1932),
     "old city":        (39.9510, -75.1436),
 }
+
+
+# --------------------------------------------------------------------------
+# Neighborhood / ZIP resolution, derived from the data (no geocoding service)
+# --------------------------------------------------------------------------
+# The seed carries no neighborhood field, but every address ends in a ZIP and
+# every row has exact coordinates. So we resolve a place name to a search center
+# by averaging the coordinates of the seed restaurants in the relevant ZIP(s):
+#   - a bare 5-digit ZIP  -> that ZIP's restaurant centroid (all 56 covered);
+#   - a known neighborhood -> the centroid of its ZIPs (coords DATA-DERIVED, not
+#     hardcoded), via the small extensible NEIGHBORHOOD_ZIPS table below;
+#   - a near-miss name     -> fuzzy-matched to the closest neighborhood;
+#   - anything else        -> unresolved (caller reports the known names).
+_ZIP_RE = re.compile(r"(\d{5})(?:-\d{4})?\s*\Z")
+
+
+def zip_of(address: str | None) -> str | None:
+    """The 5-digit ZIP at the end of an address, or None."""
+    m = _ZIP_RE.search((address or "").strip())
+    return m.group(1) if m else None
+
+
+# Well-known Philadelphia neighborhoods -> the ZIP(s) they span. Small,
+# extensible reference data; the coordinates come from the data. The index drops
+# any alias whose ZIPs are absent from the current dataset, so this table may
+# safely list more than a given seed contains.
+NEIGHBORHOOD_ZIPS = {
+    "chinatown": ["19107"],
+    "center city": ["19102", "19103", "19107"],
+    "rittenhouse": ["19103", "19102"],
+    "washington square west": ["19107"],
+    "old city": ["19106"],
+    "society hill": ["19106"],
+    "northern liberties": ["19123"],
+    "fishtown": ["19125"],
+    "kensington": ["19134", "19125"],
+    "port richmond": ["19134"],
+    "fairmount": ["19130"],
+    "spring garden": ["19130", "19123"],
+    "brewerytown": ["19121"],
+    "university city": ["19104"],
+    "west philadelphia": ["19104", "19139", "19143"],
+    "queen village": ["19147"],
+    "bella vista": ["19147"],
+    "south philadelphia": ["19147", "19148", "19145", "19146"],
+    "south philly": ["19147", "19148", "19145", "19146"],
+    "graduate hospital": ["19146"],
+    "point breeze": ["19146", "19145"],
+    "east passyunk": ["19148"],
+    "passyunk": ["19148"],
+    "manayunk": ["19127"],
+    "roxborough": ["19128"],
+    "chestnut hill": ["19118"],
+    "mount airy": ["19119"],
+    "germantown": ["19144"],
+}
+
+
+class GeoIndex:
+    """ZIP-centroid + neighborhood resolver built from a dataset's points."""
+
+    def __init__(self, zip_centroids: dict, neighborhoods: dict):
+        self.zip_centroids = zip_centroids      # {"19107": (lat, lon), ...}
+        self.neighborhoods = neighborhoods      # {"chinatown": (lat, lon), ...}
+
+    def resolve(self, name: str) -> tuple | None:
+        """Resolve a ZIP or neighborhood name to a (lat, lon) search center."""
+        key = (name or "").strip().lower()
+        if not key:
+            return None
+        z = zip_of(key)
+        if z and z in self.zip_centroids:
+            return self.zip_centroids[z]
+        if key in self.neighborhoods:
+            return self.neighborhoods[key]
+        match = _closest_name(key, self.neighborhoods)
+        return self.neighborhoods[match] if match else None
+
+    @property
+    def place_names(self) -> list:
+        """Resolvable neighborhood names (any of the 5-digit ZIPs also work)."""
+        return sorted(self.neighborhoods)
+
+
+def _closest_name(key: str, names, cutoff: float = 0.72) -> str | None:
+    best, best_ratio = None, cutoff
+    for n in names:
+        ratio = SequenceMatcher(None, key, n).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = n, ratio
+    return best
+
+
+def build_geo_index(points, aliases: dict = NEIGHBORHOOD_ZIPS) -> GeoIndex:
+    """Build a GeoIndex from (zip, lat, lon) triples. A ZIP centroid is the mean
+    coordinate of that ZIP's points; a neighborhood resolves to the (restaurant-
+    count-weighted) centroid of its present ZIPs. Triples with no ZIP or no
+    coordinate are skipped."""
+    acc = defaultdict(lambda: [0.0, 0.0, 0])   # zip -> [sum_lat, sum_lon, n]
+    for z, lat, lon in points:
+        if not z or lat is None or lon is None:
+            continue
+        a = acc[z]
+        a[0] += lat
+        a[1] += lon
+        a[2] += 1
+    zip_centroids = {z: (a[0] / a[2], a[1] / a[2]) for z, a in acc.items() if a[2]}
+
+    neighborhoods = {}
+    for name, zips in aliases.items():
+        present = [z for z in zips if z in acc]
+        if not present:
+            continue
+        n = sum(acc[z][2] for z in present)
+        lat = sum(acc[z][0] for z in present) / n
+        lon = sum(acc[z][1] for z in present) / n
+        neighborhoods[name] = (lat, lon)
+    return GeoIndex(zip_centroids, neighborhoods)
+
+
+def geo_index_from_seed(seed: list) -> GeoIndex:
+    """Build the index from prototype seed dicts (ZIP parsed off the address)."""
+    def triple(r):
+        loc = (r.get("location") or {}).get("coordinates")
+        if not loc:
+            return (None, None, None)
+        lon, lat = loc
+        return (zip_of(r.get("address")), lat, lon)
+    return build_geo_index(triple(r) for r in seed)
 
 
 # --------------------------------------------------------------------------
@@ -463,7 +596,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Restaurant recommendation prototype")
     ap.add_argument("--demo", choices=DEMOS.keys(), help="run a built-in scenario")
     ap.add_argument("--query", help="free-text request")
-    ap.add_argument("--near", help=f"neighborhood: {', '.join(LANDMARKS)}")
+    ap.add_argument("--near", help="a ZIP code or Philadelphia neighborhood name")
     ap.add_argument("--price-max", type=int, choices=[1, 2, 3, 4])
     ap.add_argument("--cuisine", nargs="*", default=[], help="cuisine keyword filters")
     ap.add_argument("--radius", type=float, default=DEFAULT_RADIUS_KM)
@@ -478,8 +611,17 @@ def main() -> None:
     elif args.query:
         query = args.query
         profile = TasteProfile(summary="(no taste profile supplied)")
+        near = None
+        if args.near:
+            index = geo_index_from_seed(seed)
+            near = index.resolve(args.near)
+            if near is None:
+                sys.exit(
+                    f"Unknown location '{args.near}'. Use a ZIP code or a "
+                    f"neighborhood: {', '.join(index.place_names)}"
+                )
         c = Constraints(
-            near=LANDMARKS.get((args.near or "").lower()),
+            near=near,
             price_max=args.price_max,
             cuisine_keywords=args.cuisine,
             radius_km=args.radius,
