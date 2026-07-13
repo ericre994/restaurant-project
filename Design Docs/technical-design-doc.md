@@ -21,26 +21,27 @@ The MVP scope is: natural-language recommendations, want-to-try / visited list m
 
 The central technical bet is the **recommendation pipeline**: rather than asking an LLM to search the world, the system pre-filters a small candidate set (15–20 restaurants) from a structured data source, then uses the LLM purely for ranking, scoring, and explanation. This keeps cost and latency bounded and predictable while still delivering the "it understands what I want" experience.
 
-### Implementation status (July 8, 2026)
+### Implementation status (July 13, 2026)
 
 A first vertical slice is implemented in `backend/` (FastAPI + SQLAlchemy) on top of the `prototype/` recommendation pipeline. The design below remains the target; this box records current reality and where it defers or stands in.
 
 **Built**
 
+- **Accounts & sessions** (§5.1, §6): local **email/password** signup/login (`POST /auth/{signup,login,logout}`) with **PBKDF2-HMAC-SHA256** password hashing (stdlib — no external auth provider or JWT library) and opaque **bearer-token sessions** (a `sessions` table, revoked on logout). `Authorization: Bearer <token>` identifies the user; the legacy `X-User-Id` header remains a **dev-only** fallback so tests/scripts keep working. Each account's lists/visits/notes are already isolated by `user_id`, so accounts make that per-user data actually private and persistent across visits.
 - **List management** (§5.1): want-to-try / visited / custom lists, list items, visits — with list rename (`PATCH /lists/{id}`) and item edit (`PATCH /lists/{id}/items/{restaurant_id}`). A restaurant's `note`/`tags` are per-user-per-restaurant (`restaurant_notes`), shared across every list it's in and editable directly via `GET/PUT /restaurants/{id}/note`; `source` is per-save. The two core lists are **mutually exclusive**: adding a restaurant to one (by an explicit add or by recording a visit) evicts it from the other, while custom lists stay additive. Each visit is a separate row (and can't be dated in the future), so a restaurant keeps a visit history (`GET /visits?restaurant_id=`).
 - **Restaurant discovery / browse**: `GET /restaurants` search over the cache with a **typo-tolerant name match** (exact `ILIKE` first, then a `SequenceMatcher` + word-prefix fuzzy fallback when it underfills; `fuzzy=false` opts out), cuisine (`categories_text`) and `price_max` filters; `GET /restaurants/cuisines` returns distinct cuisines + counts for a search typeahead; `GET /restaurants/{id}` returns full detail including `attributes` (hours/features). Distinct from the recommendation pipeline's Stage-1 retrieval below.
-- **Recommendation pipeline** behind `POST /recommendations`, reusing `prototype/recommend.py` as the single source of truth for ranking/render. Stage 1 retrieval runs in SQL (price + geo bounding box + cuisine + rating pre-rank). The hallucination guard, one-shot repair retry, and rating-sorted fallback are implemented and tested.
+- **Recommendation pipeline** behind `POST /recommendations`, reusing `prototype/recommend.py` as the single source of truth for ranking/render. Stage 1 retrieval runs in SQL (price + geo bounding box + cuisine), pre-ranked by `rating` desc, `rating_count` desc, then `id` asc as a **deterministic tiebreaker** — so retrieval is reproducible and the SQL path matches the prototype's `retrieve()` exactly. `near` resolves **any ZIP or neighborhood centroid derived from the data** (no geocoding service; ~56 ZIPs + ~28 named Philadelphia neighborhoods, fuzzy-matched), superseding the old 7 hardcoded landmarks. The hallucination guard and one-shot repair retry are implemented; the offline fallback (no `ANTHROPIC_API_KEY`) is a **personalized heuristic ranker** — taste-profile cuisine fit + query keywords/features + price comfort + distance + volume-shrunk rating, with real 0–100 `match_score`s — rather than a plain rating sort. All tested (offline).
 - **Feedback loop** (§4.5): every recommendation writes a `recommendation_logs` row; `POST /recommendations/{id}/feedback` records per-item actions.
 - **Taste profiles** (§4.5): `taste_profiles` is aggregated from visits + feedback; `derived_summary` is LLM-generated with a deterministic template fallback. Read by the pipeline per request (`GET/PUT /me/taste-profile`).
 - **Migrations** (§5.2): an initial Alembic migration is generated from the models covering all implemented list-management tables. It is DB-agnostic (JSON `embedding`, B-tree lat/lng), so it applies to both dev SQLite and Postgres; the Postgres specialization (pgvector, GIST, GIN) is a deferred follow-up (see below).
-- **Dev UI**: a single-page vanilla-JS harness served same-origin at `/app` (no CORS, no build step) exercises the browse + list APIs — typo-tolerant name search with a cuisine typeahead and a live price filter; a restaurant **detail view** (hours with today highlighted, features, and an "Open in Maps" link that resolves the actual business, not raw coordinates); a one-click **Want-to-Try** toggle, **Log visit** (date capped at today), and a custom-list picker in place of the old catch-all add-to dropdown; per-list sorting and clear-search. It stands in for the not-yet-built client app and is explicitly a dev test tool, not production UI.
+- **Dev UI**: a single-page vanilla-JS harness served same-origin at `/app` (no CORS, no build step) exercises the browse + list APIs — typo-tolerant name search with a cuisine typeahead and a live price filter; a restaurant **detail view** (hours with today highlighted, features, and an "Open in Maps" link that resolves the actual business, not raw coordinates); a one-click **Want-to-Try** toggle, **Log visit** (date capped at today), and a custom-list picker in place of the old catch-all add-to dropdown; per-list sorting and clear-search; and a **login / sign-up gate** that persists the session token (localStorage) so you return to your own lists next visit. It stands in for the not-yet-built client app and is explicitly a dev test tool, not production UI.
 
 **Schema deltas folded into §5.1**: `restaurant_notes` (per-user-per-restaurant note + tags, shared across lists), `list_items.source`, `visits.sentiment` (required by PRD §4.1); plus dev-only derived columns on `restaurants` (`latitude`, `longitude`, `categories_text`) for SQLite indexing.
 
 **Deferred / dev stand-ins** (consistent with the open questions in §9)
 
 - **Persistence**: SQLite for dev, modeling the Postgres schema. An initial Alembic migration now exists (DB-agnostic); the Postgres specialization — pgvector embeddings + `geography`/GIST + a GIN cuisine index — is a deferred follow-up migration, blocked on fixing the embedding dimension `N` (so `embedding` stays null for now).
-- **Auth**: a dev stub (`X-User-Id` header) stands in for the identity provider.
+- **Auth**: local email/password accounts are now implemented (see Built above); the `X-User-Id` header remains a **dev-only** fallback and should be gated/removed for production. A **managed external identity provider** (OAuth/social) is still an open decision (§9).
 - **Observability**: `recommendation_logs.token_usage` / `cost_estimate` are null — the prototype's LLM call doesn't yet surface usage.
 - **Not started**: reservations (§4.3), availability alerts (§4.4), the weekly recap (PRD §4.5), and a *periodic* taste-recompute job (refresh runs inline on each visit/feedback for now).
 - **Testing**: an offline `FAKE_LLM` mode exercises the LLM / repair / fallback branches without an API key (§7.4); CI runs the suite on every push/PR.
@@ -55,7 +56,7 @@ These are not yet decided in our planning and are assumed here for concreteness.
 | Client platform       | Native mobile (iOS + Android), likely cross-platform (e.g. React Native) | Deep-link reservations and push-based alerts strongly imply mobile-first.            |
 | Backend language      | Language-neutral REST service over PostgreSQL                            | Examples are given as pseudocode / HTTP; Postgres is fixed by the pgvector decision. |
 | Hosting               | Single managed Postgres + stateless app tier + a job runner              | Could be a PaaS or cloud provider; not specified here.                               |
-| Auth                  | Third-party identity provider (OAuth / managed auth)                     | We store a provider id, not passwords.                                               |
+| Auth                  | Local email/password accounts are implemented; a third-party provider (OAuth / managed auth) remains an option | *Updated:* the slice now stores PBKDF2 password hashes + bearer-token sessions locally (§7.2). Adopting a managed provider (store a provider id instead of passwords) is still open (§9). |
 | Candidate data source | Google Places **or** Yelp Fusion (one primary, the other a fallback)     | ToS and cost tradeoffs handled in the separate API ToS / Cost docs.                  |
 
 
@@ -175,9 +176,9 @@ Design notes:
 
 #### 4.1.2 Robustness of LLM output
 
-- **Schema validation:** validate the JSON against a strict schema; on failure, attempt one repair retry, then fall back to the pgvector pre-ranking order so the user still gets results.
+- **Schema validation:** validate the JSON against a strict schema; on failure, attempt one repair retry, then fall back so the user still gets results. *(Implemented)* the fallback is a **deterministic personalized ranker** — it scores the candidates offline by taste-profile cuisine fit + query keyword/feature match + price comfort + distance + volume-shrunk rating (real 0–100 scores + short reasons), which also serves as the offline default until the LLM is enabled. On Postgres it composes with the pgvector pre-ranking order.
 - **Hallucination guard:** drop any `restaurant_id` not in the candidate set.
-- **Determinism/repro:** log model, prompt version, and the exact candidate set.
+- **Determinism/repro:** log model, prompt version, and the exact candidate set. Stage-1 pre-rank order is itself deterministic (rating, then volume, then `id`).
 
 ### 4.2 Restaurant data ingestion & caching
 
@@ -211,10 +212,22 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | id                      | uuid PK          |                     |
 | email                   | citext UNIQUE    |                     |
 | display_name            | text             |                     |
-| auth_provider           | text             | e.g. provider name  |
-| auth_provider_id        | text             | external subject id |
+| password_hash           | text             | *(implemented)* PBKDF2-HMAC-SHA256, stored `pbkdf2_sha256$iters$salt$hash`; null for the dev-stub user |
+| auth_provider           | text             | *(future)* external identity-provider name — unused until a managed provider is chosen (§9) |
+| auth_provider_id        | text             | *(future)* external subject id |
 | home_location           | geography(Point) | nullable            |
 | created_at / updated_at | timestamptz      |                     |
+
+
+**sessions** *(implemented)* — opaque bearer-token login sessions (local auth)
+
+
+| Column     | Type            | Notes                                                            |
+| ---------- | --------------- | ---------------------------------------------------------------- |
+| token      | text PK         | random URL-safe secret; sent as `Authorization: Bearer <token>`  |
+| user_id    | uuid FK → users | ON DELETE CASCADE                                                |
+| created_at | timestamptz     |                                                                  |
+| expires_at | timestamptz     | 30-day TTL; row deleted on logout                                |
 
 
 **taste_profiles** (one per user)
@@ -396,6 +409,8 @@ Invariant: `visited_at` must not be after today (a visit can't be logged for a f
 
 | Method              | Path                             | Purpose                                            |
 | ------------------- | -------------------------------- | -------------------------------------------------- |
+| POST                | `/auth/signup` · `/auth/login`   | *(implemented)* Create account / log in (email + password) → `{ token, user }` |
+| POST                | `/auth/logout`                   | *(implemented)* Invalidate the current bearer token |
 | GET                 | `/me`                            | Current user profile                               |
 | GET / PUT           | `/me/taste-profile`              | Read / update taste profile                        |
 | POST                | `/recommendations`               | Run pipeline; body: `{ query, location, filters }` |
@@ -426,7 +441,7 @@ Invariant: `visited_at` must not be after today (a visit can't be logged for a f
 
 ### 7.2 Security & privacy
 
-- No password storage; rely on the identity provider.
+- Passwords: the implemented local auth stores **PBKDF2-HMAC-SHA256** hashes (per-password salt, ~240k iterations) — never plaintext — and issues opaque, revocable bearer-token sessions. If a managed identity provider is adopted later (§9), password storage can move to it.
 - Taste profiles, visits, and location are personal data — covered by the Privacy & Data Handling Notes; apply least-privilege access and encryption in transit/at rest.
 - External provider data is cached under their ToS (retention/attribution rules tracked in the API ToS Review).
 
@@ -455,12 +470,12 @@ Invariant: `visited_at` must not be after today (a visit can't be logged for a f
 
 ## 9. Open Questions & Risks
 
-- **Backend language / hosting / auth provider** — not yet chosen (see Assumptions). *Update: the implemented slice uses Python / FastAPI with a dev `X-User-Id` auth stub; treat this as a prototyping choice, not a final production decision.*
+- **Backend language / hosting / auth provider** — not yet chosen (see Assumptions). *Update: the implemented slice uses Python / FastAPI. Auth is now **local email/password** accounts (PBKDF2 hashes + bearer-token sessions), which resolves the "how do users own their data" product need; the `X-User-Id` header remains a dev-only fallback to gate/remove for production. Still open: whether to adopt a **managed external identity provider** (OAuth/social) instead of local passwords.*
 - **Client platform** — confirm native mobile vs. cross-platform.
 - **Primary data provider** — Google Places vs. Yelp Fusion; ToS and cost differ (see ToS / Cost docs). *The dev seed is the Yelp Open Dataset (Philadelphia; academic-use-only), which has no NYC coverage — see PRD.*
 - **Embedding model & dimension `N`** — pick the model; fix the vector dimension before the pgvector migration. *Still open; the initial (DB-agnostic) Alembic migration stores `embedding` as JSON/null, and Stage 1 pre-ranks by rating as a stand-in until a real embedding + pgvector column land.*
 - **Alert polling vs. ToS** — confirm permitted polling cadence per provider.
-- **LLM JSON reliability** — measure validation-failure rate early; the repair + pgvector fallback path mitigates it. *Update: schema validation, hallucination guard, one-shot repair, and rating-sorted fallback are implemented and tested (offline via `FAKE_LLM`).*
+- **LLM JSON reliability** — measure validation-failure rate early; the repair + personalized-fallback path mitigates it. *Update: schema validation, hallucination guard, one-shot repair, and a personalized heuristic fallback ranker are implemented and tested (offline via `FAKE_LLM`). The real Anthropic API has not yet been exercised end-to-end, so the live failure rate is unmeasured.*
 
 ---
 
