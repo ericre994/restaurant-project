@@ -65,11 +65,29 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     email: Mapped[Optional[str]] = mapped_column(String, unique=True)
     display_name: Mapped[Optional[str]] = mapped_column(String)
+    # PBKDF2 hash string ("pbkdf2_sha256$iters$salt$hash"). Null for the dev-stub
+    # user and any account created via the X-User-Id bypass (no password).
+    password_hash: Mapped[Optional[str]] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     lists: Mapped[List["SavedList"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class AuthSession(Base):
+    """An opaque bearer-token login session. Local auth only — no external
+    provider yet (TDD §9); the token is a random secret stored server-side so it
+    can be looked up on each request and revoked on logout."""
+
+    __tablename__ = "sessions"
+
+    token: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class TasteProfile(Base):

@@ -20,9 +20,13 @@ reference is noted so the two stay in sync.
   (JSON `embedding`, B-tree lat/lng). The Postgres follow-up — pgvector + `geography`/GIST
   radius + GIN cuisine index — is unwritten and blocked on the embedding dimension `N`. (blocker)
   — TDD §5.2
-- [ ] **Auth is a dev stub.** User comes from an `X-User-Id` header defaulting to a fixed dev
-  user. Real auth provider not chosen. Product-facing goal: **unique users / logins so each
-  person saves their own lists** (user: fix later). (decision) — TDD §9
+- [ ] **Local accounts shipped; dev bypass + external-provider decision remain.** Real
+  email/password accounts now back the product goal (each person's lists are their own):
+  `POST /auth/signup` / `/auth/login` issue an opaque bearer-token session, passwords are
+  PBKDF2-hashed (`app/security.py`, `routers/auth.py`), and the dev UI has a login gate that
+  persists the token. Still open: (a) the `X-User-Id` dev bypass in `deps.get_current_user`
+  should be gated behind a dev flag or removed for production; (b) whether to adopt a managed
+  external provider (OAuth / social login) vs. keep local passwords. (decision) — TDD §9
 - [ ] **`token_usage` / `cost_estimate` always null** in `recommendation_logs` — stay null
   until the prototype surfaces LLM usage. (low)
 _Both **fix now** backend items shipped — see **Done** below._

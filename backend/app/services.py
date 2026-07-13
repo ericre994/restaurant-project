@@ -1,10 +1,11 @@
 """Cross-cutting helpers: dev-user provisioning and core-list management."""
+from datetime import timedelta
 from typing import Dict, Iterable, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import models
+from . import models, security
 
 # Sentinel for partial-update args: distinguishes "field omitted" (leave as-is)
 # from "field set to None" (clear it). Callers pass UNSET for untouched fields.
@@ -30,6 +31,87 @@ def get_or_create_user(db: Session, user_id: str) -> models.User:
         ensure_core_lists(db, user)
         db.commit()
     return user
+
+
+# ---- Accounts + sessions (local email/password auth) ----------------------
+
+SESSION_TTL = timedelta(days=30)  # long-lived so users "pick back up" next visit
+
+
+class EmailTaken(Exception):
+    """Signup with an email that already has an account."""
+
+
+def normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def create_account(
+    db: Session, email: str, password: str, display_name: Optional[str] = None
+) -> models.User:
+    """Create a real account (hashed password) + its core lists. Raises
+    EmailTaken if the email is already registered."""
+    email = normalize_email(email)
+    if db.scalar(select(models.User).where(models.User.email == email)):
+        raise EmailTaken(email)
+    user = models.User(
+        email=email,
+        display_name=(display_name or "").strip() or email.split("@")[0],
+        password_hash=security.hash_password(password),
+    )
+    db.add(user)
+    db.flush()
+    ensure_core_lists(db, user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def authenticate(db: Session, email: str, password: str) -> Optional[models.User]:
+    """Return the user for valid email+password, else None. A passwordless
+    account (dev stub / X-User-Id bypass) never authenticates."""
+    user = db.scalar(
+        select(models.User).where(models.User.email == normalize_email(email))
+    )
+    if user is None or not user.password_hash:
+        return None
+    if not security.verify_password(password, user.password_hash):
+        return None
+    return user
+
+
+def start_session(db: Session, user: models.User) -> models.AuthSession:
+    session = models.AuthSession(
+        token=security.new_token(),
+        user_id=user.id,
+        expires_at=models.utcnow() + SESSION_TTL,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def user_for_token(db: Session, token: str) -> Optional[models.User]:
+    """Resolve a bearer token to its user, or None if unknown/expired."""
+    session = db.get(models.AuthSession, token)
+    if session is None:
+        return None
+    if session.expires_at and _aware(session.expires_at) < models.utcnow():
+        return None
+    return db.get(models.User, session.user_id)
+
+
+def end_session(db: Session, token: str) -> None:
+    session = db.get(models.AuthSession, token)
+    if session is not None:
+        db.delete(session)
+        db.commit()
+
+
+def _aware(dt):
+    """SQLite hands datetimes back naive; treat them as UTC for comparison."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=models.timezone.utc)
 
 
 def ensure_core_lists(db: Session, user: models.User) -> None:
