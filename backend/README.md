@@ -50,10 +50,10 @@ harness for the list interactions, split into two hash-routed pages:
   **Log visit** (repeatable — "Log another visit"), and remove.
 
 Adding to a core list is mutually exclusive (see Behaviors below); adding to a
-custom list is additive. The `X-User-Id` box in the header switches the acting
-user (blank = the default dev user), so you can exercise per-user isolation by
-hand. The page lives in `app/static/index.html` and talks only to the endpoints
-below.
+custom list is additive. The page shows a **login / sign-up gate** on first load
+and remembers your session (bearer token in `localStorage`), so you return to your
+own lists next visit; **Log out** is in the header. The page lives in
+`app/static/index.html` and talks only to the endpoints below.
 
 ## Migrations (Alembic)
 
@@ -71,6 +71,12 @@ Postgres specialization — `pgvector` embedding + `geography`/GIST radius + GIN
 cuisine index (TDD §5.2) — is a deliberate **follow-up** migration, blocked on
 fixing the embedding dimension `N` (TDD §9). For dev convenience the app still
 does `create_all` on startup; on Postgres use `alembic upgrade head` instead.
+
+> **Upgrading an existing dev `app.db`:** `create_all` only creates *missing*
+> tables — it won't add the new `users.password_hash` column to a DB made before
+> accounts existed. If signup 500s on an old `app.db`, delete it and re-seed
+> (`rm app.db && python -m app.seed`) for a fresh full schema, or run
+> `python -m alembic upgrade head` if that DB is Alembic-managed.
 
 ## Tests
 
@@ -107,6 +113,9 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
+| POST   | `/auth/signup` | Create an account (`email`, `password` ≥8 chars, optional `display_name`) → `{token, user}` |
+| POST   | `/auth/login` | Log in (`email`, `password`) → `{token, user}` |
+| POST   | `/auth/logout` | Invalidate the presented bearer token |
 | GET    | `/me` | Current user |
 | GET    | `/me/taste-profile` | Read the taste profile (created empty on first access) |
 | PUT    | `/me/taste-profile` | Set explicit prefs (`dietary_restrictions`, `ambiance_prefs`, cold-start `cuisines_preferred`/`price_pref`) |
@@ -149,9 +158,13 @@ output, install `anthropic` and set `ANTHROPIC_API_KEY` instead.
   list-item endpoints accept/return `note`/`tags` for convenience, but the source
   of truth is the shared record — edit it directly via `GET|PUT /restaurants/{id}/note`.
   `source` is the exception: it's per-save and stays on the list item.
-- **Auth is a dev stub.** The user is taken from an `X-User-Id` header, defaulting
-  to a fixed dev user. Real auth is a TDD open question — swap `deps.get_current_user`
-  when decided.
+- **Accounts, with a dev bypass.** Real local accounts back the API: `POST /auth/signup`
+  and `/auth/login` return an opaque bearer token (stored server-side in `sessions`,
+  revoked on logout); send it as `Authorization: Bearer <token>`. Passwords are
+  PBKDF2-hashed (`app/security.py`) — no external auth provider or JWT library. The
+  legacy `X-User-Id` header still works as a **dev-only** fallback (and the fixed dev
+  user when neither is present) so existing tests/scripts keep working; gate or remove
+  that bypass for production. A managed external provider is still a TDD open question.
 - **Schema extensions:** `list_items.tags`, `list_items.source`, and
   `visits.sentiment` are required by the PRD but not yet in the TDD draft tables.
   Fold them back into the TDD so docs and code agree.

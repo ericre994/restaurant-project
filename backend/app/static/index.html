@@ -104,19 +104,23 @@
   .kv b { font-weight: 600; }
   .detail-scroll { max-height: 62vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
   @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } .search-filters { grid-template-columns: 1fr; } .modal.wide { width: 92vw; } }
+  /* Auth gate */
+  .auth-wrap { display: flex; justify-content: center; padding-top: 7vh; }
+  .auth-card { width: 360px; max-width: 92vw; }
+  .auth-card h2 { text-transform: none; letter-spacing: 0; font-size: 20px; color: var(--ink); margin: 0 0 4px; }
+  .auth-err { color: var(--accent); font-size: 13px; min-height: 18px; margin-top: 8px; }
 </style>
 </head>
 <body>
 <header>
   <h1>🍽️ Restaurant Lists</h1>
-  <nav>
+  <nav id="nav" hidden>
     <a href="#/lookup" id="nav-lookup">Find Restaurants</a>
     <a href="#/lists" id="nav-lists">My Lists</a>
   </nav>
-  <div class="who">
+  <div class="who" id="who" hidden>
     <span id="user-label">…</span>
-    <label>X-User-Id <input id="user-id" placeholder="(default dev user)" size="14" /></label>
-    <button class="tiny" onclick="applyUser()">Switch</button>
+    <button class="tiny" id="logout-btn" onclick="doLogout()">Log out</button>
   </div>
 </header>
 
@@ -171,7 +175,7 @@
 <script>
 "use strict";
 const state = {
-  lists: [], userId: "", route: "lookup",
+  lists: [], token: localStorage.getItem("rl_token") || "", me: null, route: "lookup",
   selectedListId: null, results: null, listFilter: "",
   visitsByRestaurant: {},   // restaurant_id -> [visits]
   savedIn: {},              // restaurant_id -> Set(list types) for badges on lookup
@@ -190,7 +194,7 @@ const state = {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function api(method, path, body, _attempt = 0) {
   const headers = {};
-  if (state.userId) headers["X-User-Id"] = state.userId;
+  if (state.token) headers["Authorization"] = "Bearer " + state.token;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let res;
   try {
@@ -198,6 +202,13 @@ async function api(method, path, body, _attempt = 0) {
   } catch (netErr) {
     if (_attempt < 3) { await sleep(120 * (_attempt + 1)); return api(method, path, body, _attempt + 1); }
     throw new Error("Network error — is the server running? (" + netErr.message + ")");
+  }
+  // A 401 on an authenticated request means the session lapsed — drop it and
+  // return to the login screen. Login/signup calls carry no token, so their
+  // 401s fall through to the caller (which shows the message) instead.
+  if (res.status === 401 && state.token) {
+    clearSession(); renderAuthGate();
+    throw new Error("Your session expired — please log in again.");
   }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
@@ -213,15 +224,93 @@ const price = n => (n ? "$".repeat(n) : "—");
 const esc = s => (s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const CORE = { want_to_try: "Want to Try", visited: "Visited" };
 
-// ---- User switching ----
-function applyUser() {
-  state.userId = document.getElementById("user-id").value.trim();
-  state.selectedId = null; state.results = null;
-  boot();
+// ---- Auth (local email/password accounts; token persisted in localStorage) ----
+function clearSession() {
+  state.token = ""; state.me = null; localStorage.removeItem("rl_token");
 }
-async function loadUser() {
-  try { const u = await api("GET", "/me"); document.getElementById("user-label").textContent = u.display_name || u.id.slice(0, 8); }
-  catch (e) { toast("Load user failed: " + e.message, true); }
+function setSession(token, user) {
+  state.token = token; state.me = user; localStorage.setItem("rl_token", token);
+}
+function setChrome(authed) {
+  document.getElementById("nav").hidden = !authed;
+  document.getElementById("who").hidden = !authed;
+}
+async function doSignup(email, password, displayName) {
+  const body = { email, password };
+  if (displayName) body.display_name = displayName;
+  const { token, user } = await api("POST", "/auth/signup", body);
+  setSession(token, user);
+  await boot();
+  toast("Welcome, " + (user.display_name || user.email) + "!");
+}
+async function doLogin(email, password) {
+  const { token, user } = await api("POST", "/auth/login", { email, password });
+  setSession(token, user);
+  await boot();
+  toast("Welcome back!");
+}
+async function doLogout() {
+  try { await api("POST", "/auth/logout"); } catch (e) { /* best effort */ }
+  clearSession();
+  state.lists = []; state.selectedListId = null; state.results = null;
+  renderAuthGate();
+}
+// API error detail comes through JSON.stringify'd; unwrap to a plain sentence.
+function humanizeAuthError(msg) {
+  try {
+    const p = JSON.parse(msg);
+    if (typeof p === "string") return p;
+    if (Array.isArray(p) && p[0] && p[0].msg) return p[0].msg;  // pydantic 422
+  } catch (_) {}
+  return String(msg).replace(/^"|"$/g, "");
+}
+function renderAuthGate(mode = "login") {
+  setChrome(false);
+  const isSignup = mode === "signup";
+  document.getElementById("content").innerHTML = `
+    <div class="auth-wrap">
+      <div class="panel auth-card">
+        <h2>${isSignup ? "Create your account" : "Welcome back"}</h2>
+        <p class="muted" style="margin:0 0 14px">${isSignup
+          ? "Save restaurants and lists that are yours — and pick up right where you left off next time."
+          : "Log in to get back to your lists."}</p>
+        <div class="field"><label>Email</label>
+          <input id="a-email" type="email" autocomplete="username" placeholder="you@example.com" /></div>
+        ${isSignup ? `<div class="field"><label>Display name (optional)</label>
+          <input id="a-name" placeholder="What should we call you?" /></div>` : ""}
+        <div class="field"><label>Password</label>
+          <input id="a-pass" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}"
+            placeholder="${isSignup ? "At least 8 characters" : ""}" /></div>
+        <div id="a-err" class="auth-err"></div>
+        <div class="modal-actions" style="justify-content:space-between; align-items:center">
+          <button class="link" id="a-toggle">${isSignup ? "Have an account? Log in" : "New here? Create an account"}</button>
+          <button class="primary" id="a-submit">${isSignup ? "Sign up" : "Log in"}</button>
+        </div>
+      </div>
+    </div>`;
+  const err = document.getElementById("a-err");
+  const submit = async () => {
+    const email = document.getElementById("a-email").value.trim();
+    const pass = document.getElementById("a-pass").value;
+    err.textContent = "";
+    if (!email || !pass) { err.textContent = "Email and password are required."; return; }
+    if (isSignup && pass.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
+    document.getElementById("a-submit").disabled = true;
+    try {
+      if (isSignup) await doSignup(email, pass, document.getElementById("a-name").value.trim());
+      else await doLogin(email, pass);
+    } catch (e) {
+      err.textContent = humanizeAuthError(e.message);
+      document.getElementById("a-submit").disabled = false;
+    }
+  };
+  document.getElementById("a-submit").onclick = submit;
+  document.getElementById("a-toggle").onclick = () => renderAuthGate(isSignup ? "login" : "signup");
+  for (const id of ["a-email", "a-name", "a-pass"]) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+  }
+  document.getElementById("a-email").focus();
 }
 
 // ---- Shared data load ----
@@ -467,6 +556,7 @@ function closeDetail() { document.getElementById("detail-modal").classList.remov
 
 // ---- Router ----
 function render() {
+  if (!state.token || !state.me) { renderAuthGate(); return; }
   const hash = location.hash || "#/lookup";
   state.route = hash.startsWith("#/lists") ? "lists" : "lookup";
   document.getElementById("nav-lookup").classList.toggle("active", state.route === "lookup");
@@ -787,7 +877,15 @@ document.addEventListener("keydown", e => {
 
 // ---- Boot ----
 async function boot() {
-  await loadUser();
+  if (!state.token) { renderAuthGate(); return; }
+  try {
+    state.me = await api("GET", "/me");   // validate the stored token
+  } catch (e) {
+    clearSession(); renderAuthGate(); return;   // expired/invalid -> log in again
+  }
+  setChrome(true);
+  document.getElementById("user-label").textContent =
+    state.me.display_name || state.me.email || state.me.id.slice(0, 8);
   await loadCore();
   await loadCuisines();
   render();
