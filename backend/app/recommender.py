@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from math import cos, radians
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -70,16 +70,42 @@ def load_taste_profile(db: Session, user: models.User) -> "proto.TasteProfile":
     )
 
 
+_GEO_INDEX: Optional["proto.GeoIndex"] = None
+
+
+def _geo_index(db: Session) -> "proto.GeoIndex":
+    """ZIP/neighborhood resolver built from the restaurants in the DB (ZIP parsed
+    off each address), cached for the process. Supersedes proto.LANDMARKS with
+    data-derived centroids covering every ZIP present. The dev seed is static, so
+    a process-lifetime cache is fine; a re-seed needs a restart to be picked up.
+    """
+    global _GEO_INDEX
+    if _GEO_INDEX is None:
+        rows = db.execute(
+            select(
+                models.Restaurant.address,
+                models.Restaurant.latitude,
+                models.Restaurant.longitude,
+            )
+        ).all()
+        _GEO_INDEX = proto.build_geo_index(
+            (proto.zip_of(addr), lat, lng) for addr, lat, lng in rows
+        )
+    return _GEO_INDEX
+
+
 def _resolve_location(
-    near: Optional[str], lat: Optional[float], lng: Optional[float]
+    db: Session, near: Optional[str], lat: Optional[float], lng: Optional[float]
 ) -> Optional[Tuple[float, float]]:
     if lat is not None and lng is not None:
         return (lat, lng)
     if near:
-        coords = proto.LANDMARKS.get(near.lower())
+        index = _geo_index(db)
+        coords = index.resolve(near)
         if coords is None:
             raise ValueError(
-                f"unknown landmark '{near}'; known: {', '.join(proto.LANDMARKS)}"
+                f"unknown location '{near}'; use a ZIP code or a neighborhood: "
+                f"{', '.join(index.place_names)}"
             )
         return coords
     return None
@@ -119,10 +145,12 @@ def _sql_retrieve(db: Session, c: "proto.Constraints") -> list:
             models.Restaurant.longitude.between(lon0 - dlon, lon0 + dlon),
         )
 
-    # Pre-rank by rating quality (stand-in for the pgvector step).
+    # Pre-rank by rating quality (stand-in for the pgvector step); id breaks ties
+    # so the order is deterministic and matches the prototype's retrieve() exactly.
     stmt = stmt.order_by(
         models.Restaurant.rating.desc(),
         models.Restaurant.rating_count.desc(),
+        models.Restaurant.id.asc(),
     )
     # The geo bbox already bounds the row count; otherwise cap in SQL (over-fetch
     # when we still need a Python open-hours pass that may drop some rows).
@@ -160,10 +188,11 @@ def recommend(
 ) -> RecommendationResult:
     """Run the pipeline and return the picks plus everything the log needs.
 
-    `mode` is 'llm', 'llm-repair', or a 'fallback (...)' string — fallback when
-    no ANTHROPIC_API_KEY is set or the LLM call/parse fails (PRD reliability req).
+    `mode` is 'llm', 'llm-repair', or a 'heuristic (...)' string — the offline
+    personalized ranker runs when no ANTHROPIC_API_KEY is set or the LLM
+    call/parse fails (PRD reliability req).
     """
-    coords = _resolve_location(near, lat, lng)
+    coords = _resolve_location(db, near, lat, lng)
     constraints = proto.Constraints(
         party_size=party_size,
         near=coords,
