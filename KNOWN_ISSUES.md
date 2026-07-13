@@ -29,13 +29,21 @@ reference is noted so the two stay in sync.
   external provider (OAuth / social login) vs. keep local passwords. (decision) — TDD §9
 - [ ] **`token_usage` / `cost_estimate` always null** in `recommendation_logs` — stay null
   until the prototype surfaces LLM usage. (low)
-_Both **fix now** backend items shipped — see **Done** below._
+- [ ] **Price filter is a max, not an exact selection.** `GET /restaurants?price_max=N` (and the
+  recommendation `price_max`) returns every level ≤ N; the user expects picking `$$$$` to return
+  only `$$$$`. Decide max-vs-exact (e.g. add an exact `price` param) and update the UI selector.
+  (decision) — `routers/restaurants.py`, `recommender._sql_retrieve`, `app/static/index.html`
+_(Earlier fix-now backend items shipped — see **Done** below.)_
 
 ## Prototype / Recommender
 
 - [ ] **Real Anthropic API not yet exercised** end-to-end. The LLM ranking path is validated
   offline only (`FAKE_LLM`); JSON-reliability failure rate against the live API is unmeasured.
   (correctness) — PRD §3, TDD §9
+- [ ] **Deprioritize chains & fast food unless explicitly requested.** Down-weight chain and
+  fast-food restaurants in search/ranking unless the query or cuisine asks for them. Needs a
+  signal to identify chains (a "Fast Food" category, or names repeated across many seed
+  locations). (ux) — `prototype/recommend.py` (`_score_candidate`), `routers/restaurants.py`
 
 ## Data pipeline
 
@@ -48,7 +56,30 @@ _Both **fix now** backend items shipped — see **Done** below._
 ## Frontend / UX
 
 ### Fix now
-_All shipped — see **Done** below._
+- [ ] **Create-new-user flow & UI.** The signup path and its UI are minimal — flesh out the
+  create-account experience (clearer fields, validation feedback, friendlier copy). (ux)
+  — `app/static/index.html` (`renderAuthGate`), `routers/auth.py`
+- [ ] **Name persists in the header after logout.** After **Log out**, the logged-in user's
+  name/label still shows; logout should fully clear the identity chrome. (correctness)
+  — `app/static/index.html` (`doLogout` / `setChrome`)
+- [ ] **Make the front page more inviting.** The login / landing screen is bare — give it a
+  warmer, more welcoming first impression. (ux)
+- [ ] **Rolling (live) restaurant search.** Results should update automatically as the user
+  types (debounced), instead of requiring a Search click. (ux)
+  — `app/static/index.html` (`renderLookup` / `searchRestaurants`)
+- [ ] **Hours show "12:00 AM – 12:00 AM" for closed days.** A `0:0-0:0` / empty span renders as
+  midnight-to-midnight instead of "Closed" in the restaurant detail view. (correctness)
+  — `app/static/index.html` (`hoursHtml` / `fmtTime`)
+- [ ] **Can't see past visit logs for a restaurant.** The per-restaurant visit history exists in
+  the API (`GET /visits?restaurant_id=`) but isn't surfaced in the detail view — add a way to
+  view logged visits (date, sentiment, notes). (ux)
+- [ ] **"Want to Try" button shows on already-Visited restaurants.** The toggle appears even when
+  a restaurant is in Visited, and clicking it moves the restaurant back to Want-to-Try (evicting
+  it from Visited). Decide intended behavior — hide the button when visited, or relabel it as an
+  explicit "move back". (correctness) — `app/static/index.html` (`wantButton` / `badgeHtml`)
+- [ ] **Recommendations tab.** Add a Recommendations page to the dev UI that calls
+  `POST /recommendations` (query + near / price / cuisine filters) and renders the ranked picks +
+  reasons — the pipeline has no UI surface yet. (ux)
 
 ### Fix later
 - [ ] **Map feature.** Show restaurant locations on a map. (ux)
