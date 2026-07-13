@@ -282,8 +282,10 @@ def retrieve(seed: list[dict], c: Constraints, cap: int = CANDIDATE_CAP) -> list
             continue
         out.append(r)
 
-    # Pre-rank cheaply (stand-in for pgvector): rating, then volume.
-    out.sort(key=lambda r: (r.get("rating") or 0, r.get("rating_count") or 0), reverse=True)
+    # Pre-rank cheaply (stand-in for pgvector): rating, then volume, then id as a
+    # deterministic tiebreaker so the order is stable across runs and matches the
+    # backend's _sql_retrieve ORDER BY exactly (not just the same set).
+    out.sort(key=lambda r: (-(r.get("rating") or 0), -(r.get("rating_count") or 0), r["id"]))
     return out[:cap]
 
 

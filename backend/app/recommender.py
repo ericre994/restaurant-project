@@ -145,10 +145,12 @@ def _sql_retrieve(db: Session, c: "proto.Constraints") -> list:
             models.Restaurant.longitude.between(lon0 - dlon, lon0 + dlon),
         )
 
-    # Pre-rank by rating quality (stand-in for the pgvector step).
+    # Pre-rank by rating quality (stand-in for the pgvector step); id breaks ties
+    # so the order is deterministic and matches the prototype's retrieve() exactly.
     stmt = stmt.order_by(
         models.Restaurant.rating.desc(),
         models.Restaurant.rating_count.desc(),
+        models.Restaurant.id.asc(),
     )
     # The geo bbox already bounds the row count; otherwise cap in SQL (over-fetch
     # when we still need a Python open-hours pass that may drop some rows).
