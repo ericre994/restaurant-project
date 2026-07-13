@@ -20,22 +20,19 @@ reference is noted so the two stay in sync.
   (JSON `embedding`, B-tree lat/lng). The Postgres follow-up — pgvector + `geography`/GIST
   radius + GIN cuisine index — is unwritten and blocked on the embedding dimension `N`. (blocker)
   — TDD §5.2
-- [ ] **JSON-column in-place mutation doesn't persist.** SQLAlchemy doesn't track in-place
-  edits to JSON columns; updates must reassign a new object (`log.user_feedback = {...}`).
-  Audit every JSON-column write (`recommendation_logs.user_feedback`, `attributes`, etc.) for
-  this footgun. (correctness) — CLAUDE.md
-- [ ] **Auth is a dev stub.** User comes from an `X-User-Id` header defaulting to a fixed dev
-  user. Real auth provider not chosen. Product-facing goal: **unique users / logins so each
-  person saves their own lists** (user: fix later). (decision) — TDD §9
+- [ ] **Local accounts shipped; dev bypass + external-provider decision remain.** Real
+  email/password accounts now back the product goal (each person's lists are their own):
+  `POST /auth/signup` / `/auth/login` issue an opaque bearer-token session, passwords are
+  PBKDF2-hashed (`app/security.py`, `routers/auth.py`), and the dev UI has a login gate that
+  persists the token. Still open: (a) the `X-User-Id` dev bypass in `deps.get_current_user`
+  should be gated behind a dev flag or removed for production; (b) whether to adopt a managed
+  external provider (OAuth / social login) vs. keep local passwords. (decision) — TDD §9
 - [ ] **`token_usage` / `cost_estimate` always null** in `recommendation_logs` — stay null
   until the prototype surfaces LLM usage. (low)
 _Both **fix now** backend items shipped — see **Done** below._
 
 ## Prototype / Recommender
 
-- [ ] **`_sql_retrieve` tie-ordering** can differ from the prototype's `retrieve()` among exact
-  `rating` + `rating_count` ties. Verified to return the same candidate *set*; confirm the
-  order difference is harmless downstream. (low) — CLAUDE.md
 - [ ] **Real Anthropic API not yet exercised** end-to-end. The LLM ranking path is validated
   offline only (`FAKE_LLM`); JSON-reliability failure rate against the live API is unmeasured.
   (correctness) — PRD §3, TDD §9
@@ -88,6 +85,18 @@ _All shipped — see **Done** below._
 <!-- Move checked items here with the PR number, e.g.:
 - [x] Short description — #12
 -->
+
+### Backend rework — #20
+- [x] **`_sql_retrieve` tie-ordering made deterministic.** Both `retrieve()` and `_sql_retrieve`
+  pre-rank by `rating` desc, `rating_count` desc, then `id` asc, so the order is reproducible and
+  the two paths match exactly (not merely the same set). Regression: `tests/test_retrieve_order.py`.
+- [x] **JSON-column in-place-mutation audit complete.** All four JSON write paths
+  (`recommendation_logs.user_feedback`, `restaurant_notes.tags`, taste-profile cuisines/prefs)
+  reassign a new object, and each is guarded by an update-then-fresh-read test; an explicit named
+  guard lives in `tests/test_json_mutation_guard.py`. (`restaurants.attributes` is read-only — no
+  write path.)
+- [x] **Latent `Tuple` import bug fixed** in `recommender._resolve_location` (used but unimported,
+  masked by `from __future__ import annotations`).
 
 ### Frontend / UX — fix-now batch (dev harness `backend/app/static/index.html`)
 - [x] **Restaurant detail view.** Click a restaurant name (lookup or a list) to open a modal

@@ -6,10 +6,12 @@
 
 Thin HTTP layer over `app.recommender`, which runs the prototype pipeline
 against the DB. Works with or without an ANTHROPIC_API_KEY — without one, it
-returns the rating-sorted fallback (PRD §4.2 reliability requirement).
+returns the offline personalized ranking (PRD §4.2 reliability requirement).
 
-Neighborhood landmarks accepted by `near` (from the prototype): chinatown,
-center city, rittenhouse, fishtown, south philly, university city, old city.
+`near` accepts a 5-digit ZIP code (any of the ~56 present in the data) or a
+Philadelphia neighborhood name (chinatown, rittenhouse, fishtown, northern
+liberties, fairmount, ...); centroids are derived from the seed, not hardcoded.
+Unknown values 422 with the list of known neighborhoods.
 """
 import time
 

@@ -136,6 +136,24 @@ class UserOut(BaseModel):
     display_name: Optional[str] = None
 
 
+class SignupRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8, description="at least 8 characters")
+    display_name: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthOut(BaseModel):
+    """A successful signup/login: the bearer token + the account it belongs to."""
+
+    token: str
+    user: UserOut
+
+
 class TasteProfileOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
