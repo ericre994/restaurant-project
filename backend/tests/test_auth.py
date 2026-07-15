@@ -4,16 +4,22 @@ These use the real auth flow (Authorization: Bearer <token>). The existing dev
 stub (X-User-Id / default dev user) still works and the other test files rely on
 it — this file only exercises the new account path.
 """
+import re
+
 from sqlalchemy import select
 
 from app import models
 from app.db import SessionLocal
 
 
-def _signup(client, email, password="secret123", display_name=None):
-    body = {"email": email, "password": password}
-    if display_name:
-        body["display_name"] = display_name
+def _signup(client, email, password="secret123", username=None,
+            first_name="Test", last_name="User"):
+    # Derive a valid unique-ish username from the email local part unless given.
+    uname = username if username is not None else (re.sub(r"[^A-Za-z0-9_]", "", email.split("@")[0]) or "user")
+    if username is None and len(uname) < 3:
+        uname = (uname + "user")[:10]
+    body = {"email": email, "password": password, "username": uname,
+            "first_name": first_name, "last_name": last_name}
     return client.post("/auth/signup", json=body)
 
 
@@ -22,12 +28,15 @@ def _auth(token):
 
 
 def test_signup_returns_token_and_provisions_account(client):
-    r = _signup(client, "alice@example.com", display_name="Alice")
+    r = _signup(client, "alice@example.com", username="alice_p", first_name="Alice", last_name="Park")
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["token"]
     assert body["user"]["email"] == "alice@example.com"
-    assert body["user"]["display_name"] == "Alice"
+    assert body["user"]["username"] == "alice_p"
+    assert body["user"]["first_name"] == "Alice"
+    assert body["user"]["last_name"] == "Park"
+    assert body["user"]["display_name"] == "Alice"  # display name = first name
 
     # The token authenticates, and the account comes with its core lists.
     me = client.get("/me", headers=_auth(body["token"]))
@@ -44,10 +53,27 @@ def test_signup_duplicate_email_conflicts_case_insensitively(client):
 
 
 def test_signup_rejects_short_password_and_bad_email(client):
-    short = client.post("/auth/signup", json={"email": "x@y.com", "password": "short"})
+    short = _signup(client, "x@y.com", password="short")
     assert short.status_code == 422
-    bad = client.post("/auth/signup", json={"email": "notanemail", "password": "longenough"})
+    bad = _signup(client, "notanemail", password="longenough")
     assert bad.status_code == 422
+
+
+def test_signup_requires_valid_username_and_names(client):
+    # Missing username + names entirely.
+    missing = client.post("/auth/signup", json={"email": "a@b.com", "password": "longenough"})
+    assert missing.status_code == 422
+    # Username too short / invalid characters.
+    assert _signup(client, "u1@example.com", username="ab").status_code == 422
+    assert _signup(client, "u2@example.com", username="has space").status_code == 422
+    # Blank names.
+    assert _signup(client, "u3@example.com", first_name="   ", last_name="").status_code == 422
+
+
+def test_signup_duplicate_username_conflicts_case_insensitively(client):
+    assert _signup(client, "one@example.com", username="CoolCat").status_code == 201
+    dup = _signup(client, "two@example.com", username="coolcat")
+    assert dup.status_code == 409
 
 
 def test_login_roundtrip_and_bad_credentials(client):

@@ -2,10 +2,10 @@
 cache (TDD §4.2 retrieval is a separate concern — this is just browse/detail)."""
 import re
 from difflib import SequenceMatcher
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, services
@@ -48,20 +48,29 @@ def _fuzzy_score(query: str, name: str) -> float:
 @router.get("", response_model=list[schemas.RestaurantOut])
 def search_restaurants(
     q: Optional[str] = None,
-    cuisine: Optional[str] = None,
+    cuisine: Optional[List[str]] = Query(None, description="Match ANY of these cuisines (repeatable)"),
+    price: Optional[List[int]] = Query(None, description="Exact price levels to include (repeatable); overrides price_max"),
     price_max: Optional[int] = None,
+    rating_min: Optional[float] = Query(None, ge=0, le=5, description="Only restaurants rated at least this"),
     fuzzy: bool = Query(True, description="Fall back to typo-tolerant name matching when exact substring finds too little"),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     base = select(models.Restaurant)
-    if price_max is not None:
+    # Price: an explicit set of exact levels takes precedence over the ≤ max.
+    if price:
+        base = base.where(models.Restaurant.price_level.in_(price))
+    elif price_max is not None:
         base = base.where(models.Restaurant.price_level <= price_max)
+    if rating_min is not None:
+        base = base.where(models.Restaurant.rating >= rating_min)
     # Match cuisine against the denormalized, lowercased categories_text column
     # (indexable; kept in sync from `categories` at seed time) instead of pulling
-    # every row into Python.
+    # every row into Python. Multiple cuisines are OR'd (match any).
     if cuisine:
-        base = base.where(models.Restaurant.categories_text.ilike(f"%{cuisine.lower()}%"))
+        conds = [models.Restaurant.categories_text.ilike(f"%{c.strip().lower()}%") for c in cuisine if c.strip()]
+        if conds:
+            base = base.where(or_(*conds))
 
     if not q:
         # In SQLite, DESC sorts NULL ratings last, which is what we want.

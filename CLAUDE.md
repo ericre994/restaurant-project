@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An **early-stage** project for a restaurant discovery & management app. The design is far ahead of the code; there is no client app yet, and the backend covers only the first feature slice. The repo holds:
 
-- **`Design Docs/`** — the PRD (`restaurant-app-prd_2.md`) and Technical Design Doc (`technical-design-doc.md`). These are the source of truth; the code that exists is downstream of them. Read the TDD before touching the backend, prototype, or data pipeline.
+- **`Design Docs/`** — the PRD (`restaurant-app-prd.md`) and Technical Design Doc (`technical-design-doc.md`). These are the source of truth; the code that exists is downstream of them. Read the TDD before touching the backend, prototype, or data pipeline.
 - **`YelpData/`** — a Python pipeline that turns the Yelp Open Dataset into seed rows for the planned `restaurants` table.
 - **`prototype/`** — a runnable, database-free proof of the core "retrieve → rank → render" recommendation pipeline.
 - **`backend/`** — a FastAPI service. Implements the **list-management** capability (Want-to-Try / Visited / custom lists, list items, visits) and wraps the recommendation pipeline behind `POST /recommendations`. First real backend; uses SQLite for dev, models the Postgres schema.

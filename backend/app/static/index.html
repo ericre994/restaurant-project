@@ -20,6 +20,11 @@
   }
   header h1 { font-size: 16px; margin: 0; white-space: nowrap; }
   nav { display: flex; gap: 4px; }
+  /* The `hidden` attribute must beat these explicit `display:flex` rules — an
+     author `display` wins over the UA `[hidden]{display:none}`, so without this
+     nav/who stay visible on the login screen and after logout. An attribute +
+     element/class selector outranks the plain rules above. */
+  nav[hidden], .who[hidden] { display: none; }
   nav a {
     text-decoration: none; color: var(--muted); font-weight: 600; padding: 6px 12px;
     border-radius: 7px; font-size: 14px;
@@ -49,6 +54,24 @@
   button.link:hover { background: none; text-decoration: underline; }
   input, select, textarea { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
   select.addto { max-width: 150px; }
+  /* Add-to-list picker (all lists + membership checkmarks) */
+  .listpick { position: relative; display: inline-block; }
+  .listpick > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    border: 1px solid var(--line); background: #fff; border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; color: var(--ink); white-space: nowrap;
+  }
+  .listpick > summary::-webkit-details-marker { display: none; }
+  .listpick > summary:hover { background: #f0f0f2; }
+  .listpick[open] > summary { background: #f0f0f2; }
+  .listpick-menu {
+    position: absolute; z-index: 10; margin-top: 4px; min-width: 180px; max-height: 240px;
+    overflow-y: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.12); padding: 6px;
+  }
+  .listpick-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .listpick-row:hover { background: #f0f0f2; }
+  .new-list-btn { width: 100%; margin-top: 10px; font-weight: 600; }
   .list-row { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
   .list-row:hover { background: #f0f0f2; }
   .list-row.active { background: #fbeae7; }
@@ -75,7 +98,36 @@
   }
   #toast.show { opacity: .95; }
   #toast.err { background: var(--accent); }
-  .search-filters { display: grid; grid-template-columns: 1fr 130px 110px auto; gap: 8px; margin-bottom: 12px; }
+  /* Lookup: two-column layout (search + filters sidebar left, results right) */
+  .lookup-cols { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  .lookup-search input#s-q { width: 100%; }
+  .lookup-actions { display: flex; gap: 8px; margin: 10px 0 2px; }
+  .lookup-actions .grow { flex: 1; }
+  /* Filter set with a single master show/hide toggle. */
+  .facets-head { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .filters-toggle { color: var(--accent); font-weight: 600; font-size: 12px; }
+  .lookup-facets { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+  /* The `hidden` attribute must beat `display:flex` (author display wins over the
+     UA [hidden] rule), or the master toggle can't hide the filters. */
+  .lookup-facets[hidden] { display: none; }
+  .facet-group { display: flex; flex-direction: column; gap: 6px; }
+  .facet-title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  .facet-group select { width: 100%; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip-toggle { border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 3px 12px; font-size: 13px; cursor: pointer; }
+  .chip-toggle:hover { background: #f0f0f2; }
+  .chip-toggle.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  @media (max-width: 760px) { .lookup-cols { grid-template-columns: 1fr; } }
+  /* Generic stacked label+input field (modals add their own top margin). */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  /* Recommendations page */
+  .rec-filters { display: grid; grid-template-columns: 1fr 110px 1fr 90px; gap: 10px; margin-top: 12px; }
+  .score { font-weight: 700; font-size: 12px; color: var(--accent); background: #fbeae7;
+    border-radius: 6px; padding: 2px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .reasons { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+  .reasons li { margin: 1px 0; }
+  @media (max-width: 720px) { .rec-filters { grid-template-columns: 1fr; } }
   /* Modal */
   .modal-backdrop {
     position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none;
@@ -102,13 +154,46 @@
   .chip { background: #eef; color: #3a3a8a; border-radius: 12px; padding: 2px 10px; font-size: 12px; }
   .kv { font-size: 13px; }
   .kv b { font-weight: 600; }
+  .visit-log { display: flex; flex-direction: column; }
+  .visit-entry { padding: 6px 0; border-top: 1px solid var(--line); }
+  .visit-entry:first-child { border-top: none; padding-top: 0; }
+  .visit-entry .note { margin-top: 2px; }
   .detail-scroll { max-height: 62vh; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
   @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } .search-filters { grid-template-columns: 1fr; } .modal.wide { width: 92vw; } }
-  /* Auth gate */
-  .auth-wrap { display: flex; justify-content: center; padding-top: 7vh; }
-  .auth-card { width: 360px; max-width: 92vw; }
+  /* Auth / landing */
+  .landing {
+    display: grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items: center;
+    max-width: 940px; margin: 0 auto; padding: 6vh 8px 4vh; min-height: 78vh;
+  }
+  .landing-hero .brand { font-size: 26px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .landing-hero .brand span {
+    background: linear-gradient(90deg, var(--accent), #e07a2f);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .landing-hero h2 { font-size: 30px; line-height: 1.15; margin: 18px 0 10px; color: var(--ink); }
+  .landing-hero .lede { color: var(--muted); font-size: 15px; max-width: 40ch; margin: 0 0 22px; }
+  .landing-feats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  .landing-feats li { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; color: var(--muted); }
+  .landing-feats li span { font-size: 20px; line-height: 1.2; }
+  .landing-feats li b { color: var(--ink); }
+  .auth-card { width: 100%; max-width: 400px; justify-self: center; }
   .auth-card h2 { text-transform: none; letter-spacing: 0; font-size: 20px; color: var(--ink); margin: 0 0 4px; }
-  .auth-err { color: var(--accent); font-size: 13px; min-height: 18px; margin-top: 8px; }
+  .auth-card .field { margin-top: 14px; }
+  .auth-card .name-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .auth-card .name-row .field { margin-top: 0; }
+  .auth-err { color: var(--accent); font-size: 13px; min-height: 18px; margin-top: 10px; }
+  .auth-submit { width: 100%; padding: 9px; margin-top: 14px; font-weight: 600; }
+  .show-pass { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .auth-toggle-line { font-size: 13px; text-align: center; margin: 14px 0 0; }
+  .auth-toggle-line .link { color: var(--accent); font-weight: 600; }
+  @media (max-width: 780px) {
+    .landing { grid-template-columns: 1fr; gap: 22px; padding-top: 3vh; min-height: 0; }
+    .landing-hero { text-align: center; }
+    .landing-hero .brand, .landing-feats li { justify-content: center; }
+    .landing-hero .lede { margin-left: auto; margin-right: auto; }
+    .landing-feats li { text-align: left; }
+    .auth-card { order: -1; }
+  }
 </style>
 </head>
 <body>
@@ -116,6 +201,7 @@
   <h1>🍽️ Restaurant Lists</h1>
   <nav id="nav" hidden>
     <a href="#/lookup" id="nav-lookup">Find Restaurants</a>
+    <a href="#/recommend" id="nav-recommend">Recommendations</a>
     <a href="#/lists" id="nav-lists">My Lists</a>
   </nav>
   <div class="who" id="who" hidden>
@@ -129,7 +215,7 @@
 <!-- Log-visit modal -->
 <div class="modal-backdrop" id="visit-modal">
   <div class="modal">
-    <h3>Log a visit</h3>
+    <h3 id="visit-modal-title">Log a visit</h3>
     <div class="muted" id="visit-modal-sub"></div>
     <div class="field">
       <label>Sentiment</label>
@@ -157,7 +243,7 @@
     </div>
     <div class="modal-actions">
       <button onclick="closeVisit()">Cancel</button>
-      <button class="primary" onclick="submitVisit()">Log visit</button>
+      <button class="primary" id="v-submit" onclick="submitVisit()">Log visit</button>
     </div>
   </div>
 </div>
@@ -170,6 +256,43 @@
   </div>
 </div>
 
+<!-- Edit note & tags modal -->
+<div class="modal-backdrop" id="note-modal">
+  <div class="modal">
+    <h3>Note &amp; tags</h3>
+    <div class="muted" id="note-modal-sub"></div>
+    <div class="field">
+      <label>Note</label>
+      <textarea id="n-note" rows="3" placeholder="A private note about this place…"></textarea>
+    </div>
+    <div class="field">
+      <label>Tags (comma-separated)</label>
+      <input id="n-tags" placeholder="e.g. date night, cheap eats, outdoor" />
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeNote()">Cancel</button>
+      <button class="primary" onclick="submitNote()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create-list modal -->
+<div class="modal-backdrop" id="list-modal">
+  <div class="modal">
+    <h3>Create a new list</h3>
+    <p class="muted" style="margin:0 0 4px">Group restaurants any way you like — a trip, a craving, a night out.</p>
+    <div class="field">
+      <label>List name</label>
+      <input id="cl-name" placeholder="e.g. Date night spots" />
+    </div>
+    <div id="cl-err" class="auth-err"></div>
+    <div class="modal-actions">
+      <button onclick="closeListModal()">Cancel</button>
+      <button class="primary" onclick="submitNewList()">Create list</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -179,11 +302,20 @@ const state = {
   selectedListId: null, results: null, listFilter: "",
   visitsByRestaurant: {},   // restaurant_id -> [visits]
   savedIn: {},              // restaurant_id -> Set(list types) for badges on lookup
+  listMembership: {},       // restaurant_id -> Set(list ids) for the add-to-list picker
   pendingVisit: null,       // {restaurantId, name}
+  pendingNote: null,        // {listId, restaurantId} for the note/tags modal
   cuisines: [],             // [{name, count}] for the search-bar typeahead
   itemSort: "added",        // My Lists sort key: added|name|price|rating|tag
   detailCache: {},          // restaurant_id -> full restaurant record (with attributes)
-  search: { q: "", cuisine: "", price: "" },  // persisted so a re-render (e.g. after a save) keeps the query
+  // Lookup filters, persisted so a re-render (e.g. after a save) keeps them.
+  // price: array of exact levels; cuisine: array of names; rating: min-rating
+  // string ("" = any); hours: "any" | "open_now" | "open_24h".
+  search: { q: "", cuisine: [], price: [], rating: "", hours: "any" },
+  filtersOpen: true,        // master show/hide for the whole lookup filter set
+  searchSeq: 0,             // live-search request sequence guard
+  // Recommendations tab form + last result (persisted across re-renders).
+  recommend: { query: "", near: "", price: "", cuisine: "", party: 2, openNow: false, result: null },
 };
 
 // ---- API helper (same-origin; optional X-User-Id header) ----
@@ -192,6 +324,14 @@ const state = {
 // rejected fetch even though the request is valid. HTTP errors (4xx/5xx) are
 // real and are NOT retried.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Trailing-edge debounce: coalesce rapid calls (e.g. keystrokes) into one.
+// The returned function carries a .cancel() to drop any pending invocation.
+function debounce(fn, ms) {
+  let t;
+  const wrapped = (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  wrapped.cancel = () => clearTimeout(t);
+  return wrapped;
+}
 async function api(method, path, body, _attempt = 0) {
   const headers = {};
   if (state.token) headers["Authorization"] = "Bearer " + state.token;
@@ -234,14 +374,16 @@ function setSession(token, user) {
 function setChrome(authed) {
   document.getElementById("nav").hidden = !authed;
   document.getElementById("who").hidden = !authed;
+  // Clear the identity label when logging out so no stale name lingers in the
+  // header chrome (the panel is hidden, but don't leave the old value behind).
+  if (!authed) document.getElementById("user-label").textContent = "…";
 }
-async function doSignup(email, password, displayName) {
-  const body = { email, password };
-  if (displayName) body.display_name = displayName;
-  const { token, user } = await api("POST", "/auth/signup", body);
+async function doSignup(fields) {
+  // fields: { email, password, username, first_name, last_name }
+  const { token, user } = await api("POST", "/auth/signup", fields);
   setSession(token, user);
   await boot();
-  toast("Welcome, " + (user.display_name || user.email) + "!");
+  toast("Welcome, " + (user.display_name || user.first_name || user.email) + "!");
 }
 async function doLogin(email, password) {
   const { token, user } = await api("POST", "/auth/login", { email, password });
@@ -264,49 +406,93 @@ function humanizeAuthError(msg) {
   } catch (_) {}
   return String(msg).replace(/^"|"$/g, "");
 }
+const _looksLikeEmail = s => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 function renderAuthGate(mode = "login") {
   setChrome(false);
   const isSignup = mode === "signup";
   document.getElementById("content").innerHTML = `
-    <div class="auth-wrap">
-      <div class="panel auth-card">
-        <h2>${isSignup ? "Create your account" : "Welcome back"}</h2>
-        <p class="muted" style="margin:0 0 14px">${isSignup
-          ? "Save restaurants and lists that are yours — and pick up right where you left off next time."
-          : "Log in to get back to your lists."}</p>
+    <div class="landing">
+      <section class="landing-hero">
+        <div class="brand">🍽️ <span>Restaurant Lists</span></div>
+        <h2>${isSignup ? "Find your next favorite spot." : "Welcome back."}</h2>
+        <p class="lede">Keep everywhere you want to try and everywhere you've loved in one place —
+          then get picks tuned to your taste.</p>
+        <ul class="landing-feats">
+          <li><span>🔖</span><div><b>Save &amp; organize.</b> Want-to-Try, Visited, and your own custom lists.</div></li>
+          <li><span>📝</span><div><b>Remember the details.</b> Notes, tags, ratings, and full visit history per place.</div></li>
+          <li><span>✨</span><div><b>Personalized picks.</b> Recommendations ranked from your own history.</div></li>
+        </ul>
+      </section>
+      <section class="panel auth-card">
+        <h2>${isSignup ? "Create your account" : "Log in"}</h2>
+        <p class="muted" style="margin:0 0 6px">${isSignup
+          ? "It's free — start building your lists in seconds."
+          : "Pick up right where you left off."}</p>
         <div class="field"><label>Email</label>
           <input id="a-email" type="email" autocomplete="username" placeholder="you@example.com" /></div>
-        ${isSignup ? `<div class="field"><label>Display name (optional)</label>
-          <input id="a-name" placeholder="What should we call you?" /></div>` : ""}
+        ${isSignup ? `<div class="name-row">
+          <div class="field"><label>First name</label>
+            <input id="a-first" autocomplete="given-name" placeholder="First" /></div>
+          <div class="field"><label>Last name</label>
+            <input id="a-last" autocomplete="family-name" placeholder="Last" /></div>
+        </div>
+        <div class="field"><label>Username</label>
+          <input id="a-username" autocomplete="off" placeholder="yourhandle" /></div>` : ""}
         <div class="field"><label>Password</label>
           <input id="a-pass" type="password" autocomplete="${isSignup ? "new-password" : "current-password"}"
             placeholder="${isSignup ? "At least 8 characters" : ""}" /></div>
+        ${isSignup ? `<div class="field"><label>Confirm password</label>
+          <input id="a-pass2" type="password" autocomplete="new-password" placeholder="Re-enter your password" /></div>
+        <label class="show-pass"><input type="checkbox" id="a-show" /> Show password</label>` : ""}
         <div id="a-err" class="auth-err"></div>
-        <div class="modal-actions" style="justify-content:space-between; align-items:center">
-          <button class="link" id="a-toggle">${isSignup ? "Have an account? Log in" : "New here? Create an account"}</button>
-          <button class="primary" id="a-submit">${isSignup ? "Sign up" : "Log in"}</button>
-        </div>
-      </div>
+        <button class="primary auth-submit" id="a-submit">${isSignup ? "Create account" : "Log in"}</button>
+        <p class="auth-toggle-line">${isSignup ? "Already have an account?" : "New here?"}
+          <button class="link" id="a-toggle">${isSignup ? "Log in" : "Create an account"}</button></p>
+      </section>
     </div>`;
   const err = document.getElementById("a-err");
+  const setErr = m => { err.textContent = m; };
   const submit = async () => {
     const email = document.getElementById("a-email").value.trim();
     const pass = document.getElementById("a-pass").value;
-    err.textContent = "";
-    if (!email || !pass) { err.textContent = "Email and password are required."; return; }
-    if (isSignup && pass.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
+    setErr("");
+    // Client-side validation with specific, friendly messages (the server
+    // re-validates and 409s on a taken email).
+    if (!email) return setErr("Please enter your email address.");
+    if (isSignup && !_looksLikeEmail(email)) return setErr("That doesn't look like a valid email address.");
+    let signupFields = null;
+    if (isSignup) {
+      const first = document.getElementById("a-first").value.trim();
+      const last = document.getElementById("a-last").value.trim();
+      const username = document.getElementById("a-username").value.trim();
+      if (!first || !last) return setErr("Please enter your first and last name.");
+      if (!/^[A-Za-z0-9_]{3,30}$/.test(username))
+        return setErr("Username must be 3–30 letters, numbers, or underscores.");
+      signupFields = { email, password: pass, username, first_name: first, last_name: last };
+    }
+    if (!pass) return setErr("Please enter your password.");
+    if (isSignup) {
+      if (pass.length < 8) return setErr("Password must be at least 8 characters.");
+      if (pass !== document.getElementById("a-pass2").value) return setErr("The passwords don't match.");
+    }
     document.getElementById("a-submit").disabled = true;
     try {
-      if (isSignup) await doSignup(email, pass, document.getElementById("a-name").value.trim());
+      if (isSignup) await doSignup(signupFields);
       else await doLogin(email, pass);
     } catch (e) {
-      err.textContent = humanizeAuthError(e.message);
+      setErr(humanizeAuthError(e.message));
       document.getElementById("a-submit").disabled = false;
     }
   };
   document.getElementById("a-submit").onclick = submit;
   document.getElementById("a-toggle").onclick = () => renderAuthGate(isSignup ? "login" : "signup");
-  for (const id of ["a-email", "a-name", "a-pass"]) {
+  const show = document.getElementById("a-show");
+  if (show) show.addEventListener("change", () => {
+    const t = show.checked ? "text" : "password";
+    document.getElementById("a-pass").type = t;
+    document.getElementById("a-pass2").type = t;
+  });
+  for (const id of ["a-email", "a-first", "a-last", "a-username", "a-pass", "a-pass2"]) {
     const el = document.getElementById(id);
     if (el) el.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
   }
@@ -326,12 +512,20 @@ async function loadCore() {
   for (const v of visits) (vmap[v.restaurant_id] = vmap[v.restaurant_id] || []).push(v);
   state.visitsByRestaurant = vmap;
 
+  // One pass over every list builds both: savedIn (core-list types, for badges)
+  // and listMembership (all list ids, for the add-to-list picker's checkmarks).
   const saved = {};
-  for (const l of state.lists.filter(x => x.type === "want_to_try" || x.type === "visited")) {
+  const membership = {};
+  for (const l of state.lists) {
     const items = await api("GET", `/lists/${l.id}/items`);
-    for (const it of items) (saved[it.restaurant_id] = saved[it.restaurant_id] || new Set()).add(l.type);
+    for (const it of items) {
+      (membership[it.restaurant_id] = membership[it.restaurant_id] || new Set()).add(l.id);
+      if (l.type === "want_to_try" || l.type === "visited")
+        (saved[it.restaurant_id] = saved[it.restaurant_id] || new Set()).add(l.type);
+    }
   }
   state.savedIn = saved;
+  state.listMembership = membership;
 }
 
 // ---- Add-to custom list (core lists have dedicated Want-to-Try / Log-visit buttons) ----
@@ -355,15 +549,20 @@ function todayLocalISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function openVisit(restaurantId, name) {
-  state.pendingVisit = { restaurantId, name };
+// Open the visit modal. Pass `visit` to edit an existing log (pre-fills fields
+// and PATCHes on save); omit it to create. `returnToDetail` reopens the detail
+// modal after saving (used when editing from a restaurant's visit history).
+function openVisit(restaurantId, name, visit = null, returnToDetail = false) {
+  state.pendingVisit = { restaurantId, name, visitId: visit ? visit.id : null, returnToDetail };
   document.getElementById("visit-modal-sub").textContent = name;
-  document.getElementById("v-sentiment").value = "";
-  document.getElementById("v-rating").value = "";
-  document.getElementById("v-notes").value = "";
+  document.getElementById("v-sentiment").value = (visit && visit.sentiment) || "";
+  document.getElementById("v-rating").value = visit && visit.user_rating ? String(visit.user_rating) : "";
+  document.getElementById("v-notes").value = (visit && visit.notes) || "";
   const dateEl = document.getElementById("v-date");
-  dateEl.value = "";
+  dateEl.value = visit && visit.visited_at ? String(visit.visited_at).slice(0, 10) : "";
   dateEl.max = todayLocalISO();   // no future dates in the picker
+  document.getElementById("visit-modal-title").textContent = visit ? "Edit visit" : "Log a visit";
+  document.getElementById("v-submit").textContent = visit ? "Save changes" : "Log visit";
   document.getElementById("visit-modal").classList.add("show");
 }
 function closeVisit() {
@@ -372,32 +571,75 @@ function closeVisit() {
 }
 async function submitVisit() {
   if (!state.pendingVisit) return;
-  const body = { restaurant_id: state.pendingVisit.restaurantId };
+  const { restaurantId, name, visitId, returnToDetail } = state.pendingVisit;
   const s = document.getElementById("v-sentiment").value;
   const r = document.getElementById("v-rating").value;
   const notes = document.getElementById("v-notes").value.trim();
   const date = document.getElementById("v-date").value;
-  if (s) body.sentiment = s;
-  if (r) body.user_rating = Number(r);
-  if (notes) body.notes = notes;
-  if (date) {
-    if (date > todayLocalISO()) return toast("Visit date can't be in the future", true);
-    body.visited_at = new Date(date + "T12:00:00").toISOString();
+  if (date && date > todayLocalISO()) return toast("Visit date can't be in the future", true);
+  const visitedAt = date ? new Date(date + "T12:00:00").toISOString() : null;
+
+  let body;
+  if (visitId) {
+    // Edit: send fields explicitly so cleared ones (null) actually clear.
+    body = { sentiment: s || null, user_rating: r ? Number(r) : null, notes: notes || null };
+    if (date) body.visited_at = visitedAt;
+  } else {
+    body = { restaurant_id: restaurantId };
+    if (s) body.sentiment = s;
+    if (r) body.user_rating = Number(r);
+    if (notes) body.notes = notes;
+    if (visitedAt) body.visited_at = visitedAt;
   }
-  const name = state.pendingVisit.name;
   try {
-    await api("POST", "/visits", body);
+    if (visitId) await api("PATCH", `/visits/${visitId}`, body);
+    else await api("POST", "/visits", body);
     closeVisit();
     await loadCore();
     render();
-    toast(`Logged a visit to “${name}” (now in Visited)`);
-  } catch (e) { toast("Log visit failed: " + e.message, true); }
+    if (returnToDetail) openDetail(restaurantId);   // bring back the (refreshed) detail view
+    toast(visitId ? "Visit updated" : `Logged a visit to “${name}” (now in Visited)`);
+  } catch (e) { toast((visitId ? "Update" : "Log visit") + " failed: " + e.message, true); }
+}
+async function deleteVisit(visitId, restaurantId) {
+  if (!confirm("Delete this visit log? This can't be undone.")) return;
+  try {
+    await api("DELETE", `/visits/${visitId}`);
+    await loadCore();
+    render();
+    // The detail modal is still open — refresh its visit history in place.
+    if (document.getElementById("detail-modal").classList.contains("show")) openDetail(restaurantId);
+    toast("Visit deleted");
+  } catch (e) { toast("Delete failed: " + e.message, true); }
 }
 function visitLine(restaurantId) {
   const vs = state.visitsByRestaurant[restaurantId] || [];
   if (!vs.length) return "";
   const last = vs[0].visited_at ? new Date(vs[0].visited_at).toLocaleDateString() : "";
   return `Visited ${vs.length}× ${last ? "· last " + last : ""}`;
+}
+const SENTIMENT_LABELS = { loved: "Loved it", liked: "Liked it", wouldnt_return: "Wouldn't return" };
+// Full per-restaurant visit log (date · sentiment · rating · notes), newest
+// first, for the detail modal. Reads the already-loaded state.visitsByRestaurant
+// (populated by loadCore from GET /visits) — no extra request needed.
+function visitHistoryHtml(restaurantId) {
+  const vs = state.visitsByRestaurant[restaurantId] || [];
+  if (!vs.length) return `<span class="muted">No visits logged yet.</span>`;
+  return `<div class="visit-log">` + vs.map(v => {
+    const date = v.visited_at
+      ? new Date(v.visited_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+      : "Undated";
+    const bits = [];
+    if (SENTIMENT_LABELS[v.sentiment]) bits.push(SENTIMENT_LABELS[v.sentiment]);
+    if (v.user_rating) bits.push("★".repeat(v.user_rating));
+    const meta = bits.length ? " · " + bits.join(" · ") : "";
+    const notes = v.notes ? `<div class="note">“${esc(v.notes)}”</div>` : "";
+    return `<div class="visit-entry"><div class="row">` +
+      `<div class="kv grow"><b>${esc(date)}</b>${esc(meta)}</div>` +
+      `<button class="tiny" data-vedit="${esc(v.id)}">Edit</button>` +
+      `<button class="tiny" data-vdel="${esc(v.id)}">Delete</button>` +
+      `</div>${notes}</div>`;
+  }).join("") + `</div>`;
 }
 
 // ---- Core-list helpers ----
@@ -422,7 +664,13 @@ async function toggleWantToTry(restaurantId, name) {
     else toast("Failed: " + e.message, true);
   }
 }
+// Returns the Want-to-Try toggle, or null when the restaurant is already in
+// Visited — offering "＋ Want to Try" there is confusing and clicking it would
+// move an already-visited place back to Want-to-Try (evicting it from Visited).
+// Once visited, "Log another visit" is the relevant action. Callers must handle
+// a null return (skip appending).
 function wantButton(restaurantId, name) {
+  if (isSavedIn(restaurantId, "visited")) return null;
   const saved = isSavedIn(restaurantId, "want_to_try");
   const b = document.createElement("button");
   b.className = "want" + (saved ? " saved" : "");
@@ -431,16 +679,58 @@ function wantButton(restaurantId, name) {
   b.onclick = () => toggleWantToTry(restaurantId, name);
   return b;
 }
-// Compact picker for CUSTOM lists only (core lists have dedicated buttons now).
-function customListSelect(restaurantId) {
-  const custom = state.lists.filter(l => l.type === "custom");
-  if (!custom.length) return null;
-  const sel = document.createElement("select");
-  sel.className = "addto";
-  sel.innerHTML = `<option value="">＋ Add to list…</option>` +
-    custom.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("");
-  sel.onchange = () => { if (sel.value) addToList(restaurantId, sel.value); sel.value = ""; };
-  return sel;
+const isInList = (restaurantId, listId) => (state.listMembership[restaurantId] || new Set()).has(listId);
+
+// Add-to-list picker: a disclosure listing EVERY list with a checkbox marking
+// the ones this restaurant is already in (toggle to add/remove). Toggles hit the
+// API and update local state optimistically so several can be flipped while the
+// menu is open; closing the menu reconciles with the server and refreshes badges.
+function listPickerControl(restaurantId) {
+  if (!state.lists.length) return null;
+  const det = document.createElement("details");
+  det.className = "listpick";
+  const sum = document.createElement("summary");
+  sum.textContent = "＋ Add to list";
+  det.appendChild(sum);
+  const menu = document.createElement("div");
+  menu.className = "listpick-menu";
+  for (const l of state.lists) {
+    const row = document.createElement("label");
+    row.className = "listpick-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = isInList(restaurantId, l.id);
+    cb.onchange = () => toggleListMembership(restaurantId, l.id, cb.checked, cb);
+    row.appendChild(cb);
+    const span = document.createElement("span");
+    span.textContent = l.name + (l.type !== "custom" ? " · core" : "");
+    row.appendChild(span);
+    menu.appendChild(row);
+  }
+  det.appendChild(menu);
+  // On close, reconcile with the server + refresh badges — but only if a
+  // membership actually changed while open (avoids a needless re-render when the
+  // menu is just opened and dismissed, e.g. by an outside click).
+  det.addEventListener("toggle", () => {
+    if (!det.open && det._changed) { det._changed = false; loadCore().then(render); }
+  });
+  return det;
+}
+async function toggleListMembership(restaurantId, listId, add, cb) {
+  try {
+    if (add) await api("POST", `/lists/${listId}/items`, { restaurant_id: restaurantId });
+    else await api("DELETE", `/lists/${listId}/items/${restaurantId}`);
+    const det = cb.closest("details.listpick");
+    if (det) det._changed = true;   // flag so the close handler reconciles
+    // Optimistic local update so further toggles in the open menu stay consistent.
+    const set = state.listMembership[restaurantId] || (state.listMembership[restaurantId] = new Set());
+    add ? set.add(listId) : set.delete(listId);
+    const l = state.lists.find(x => x.id === listId);
+    toast(add ? `Added to “${l ? l.name : "list"}”` : `Removed from “${l ? l.name : "list"}”`);
+  } catch (e) {
+    if (String(e.message).includes("already in this list")) { cb.checked = true; }
+    else { cb.checked = !add; toast("Update failed: " + e.message, true); }
+  }
 }
 
 // ---- Cuisine typeahead ----
@@ -462,14 +752,30 @@ function fmtTime(t) { // "7:0" / "20:30" -> "7:00 AM" / "8:30 PM"
   const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
   return `${h}:${m} ${ap}`;
 }
+// --- YELP_SEED_HOURS (remove with the Yelp seed) -----------------------------
+// The Yelp Open Dataset encodes both "closed for the day" and "open 24 hours" as
+// the same zero-length "0:0-0:0" span, so it can't be rendered literally (it
+// shows "12:00 AM – 12:00 AM"). We disambiguate by context: if *every* listed
+// day is 0:0-0:0 the place is genuinely 24h (Wawa, McDonald's, diners — 102 in
+// the seed); a lone 0:0-0:0 among real hours is a closed day (almost always the
+// classic "closed Mondays" — 653 of 666 in the seed). This heuristic is specific
+// to the Yelp seed and should be DELETED when the production data provider lands
+// (KNOWN_ISSUES "Production data provider"), which is expected to supply explicit
+// closed / 24-hour flags instead. Grep tag: YELP_SEED_HOURS.
+const _ZERO_SPAN = "0:0-0:0";
 function hoursHtml(hours) {
   if (!hours || !Object.keys(hours).length) return `<span class="muted">No hours on file.</span>`;
   const today = _todayName();
+  const vals = Object.values(hours);
+  const allDay = vals.length >= 6 && vals.every(v => v === _ZERO_SPAN);  // YELP_SEED_HOURS
+  const spanFor = v => {
+    if (!v) return "Closed";
+    if (v === _ZERO_SPAN) return allDay ? "Open 24 hours" : "Closed";  // YELP_SEED_HOURS
+    return v.split("-").map(fmtTime).join(" – ");
+  };
   return `<div class="hours-grid">` + DAYS.map(d => {
-    const v = hours[d];
-    const span = v ? v.split("-").map(fmtTime).join(" – ") : "Closed";
     const cls = d === today ? " today" : "";
-    return `<div class="day${cls}">${d}</div><div class="${cls.trim()}">${esc(span)}</div>`;
+    return `<div class="day${cls}">${d}</div><div class="${cls.trim()}">${esc(spanFor(hours[d]))}</div>`;
   }).join("") + `</div>`;
 }
 // Human labels for the raw Yelp feature keys worth surfacing.
@@ -542,15 +848,30 @@ function renderDetail(r) {
           r.categories.map(c => `<span class="chip">${esc(c)}</span>`).join("") + `</div></div>` : "") +
       `<div class="detail-sec"><h4>Hours</h4>${hoursHtml(attrs.hours)}</div>` +
       `<div class="detail-sec"><h4>Features</h4>${featureChips(attrs.features)}</div>` +
+      `<div class="detail-sec"><h4>Your visits</h4>${visitHistoryHtml(r.id)}</div>` +
     `</div>` +
     `<div class="modal-actions"></div>`;
   // Action buttons that mutate lists — reuse the shared controls.
   const acts = body.querySelector(".modal-actions");
-  acts.appendChild(wantButton(r.id, r.name));
+  const wb = wantButton(r.id, r.name);
+  if (wb) acts.appendChild(wb);
   const visit = document.createElement("button");
   visit.textContent = (state.visitsByRestaurant[r.id] || []).length ? "Log another visit" : "Log visit";
   visit.onclick = () => { closeDetail(); openVisit(r.id, r.name); };
   acts.appendChild(visit);
+  const picker = listPickerControl(r.id);
+  if (picker) acts.appendChild(picker);
+  // Wire per-visit Edit/Delete controls in the visit-history section (rendered
+  // via innerHTML, so attach handlers after the fact).
+  body.querySelectorAll("[data-vedit]").forEach(b => {
+    b.onclick = () => {
+      const v = (state.visitsByRestaurant[r.id] || []).find(x => x.id === b.getAttribute("data-vedit"));
+      if (v) { closeDetail(); openVisit(r.id, r.name, v, true); }
+    };
+  });
+  body.querySelectorAll("[data-vdel]").forEach(b => {
+    b.onclick = () => deleteVisit(b.getAttribute("data-vdel"), r.id);
+  });
 }
 function closeDetail() { document.getElementById("detail-modal").classList.remove("show"); }
 
@@ -558,56 +879,116 @@ function closeDetail() { document.getElementById("detail-modal").classList.remov
 function render() {
   if (!state.token || !state.me) { renderAuthGate(); return; }
   const hash = location.hash || "#/lookup";
-  state.route = hash.startsWith("#/lists") ? "lists" : "lookup";
+  state.route = hash.startsWith("#/lists") ? "lists"
+    : hash.startsWith("#/recommend") ? "recommend" : "lookup";
   document.getElementById("nav-lookup").classList.toggle("active", state.route === "lookup");
+  document.getElementById("nav-recommend").classList.toggle("active", state.route === "recommend");
   document.getElementById("nav-lists").classList.toggle("active", state.route === "lists");
   if (state.route === "lists") renderLists();
+  else if (state.route === "recommend") renderRecommend();
   else renderLookup();
 }
 window.addEventListener("hashchange", render);
 
 // ---- Lookup page ----
+// A curated set of common cuisines for the advanced-filters picker (all present
+// in the Philadelphia seed). Kept short and recognizable rather than exhaustive.
+const COMMON_CUISINES = [
+  "Pizza", "Chinese", "Mexican", "Thai", "Italian", "Japanese", "Sushi",
+  "American (New)", "Burgers", "Seafood", "Indian", "Vietnamese",
+  "Mediterranean", "Breakfast & Brunch", "Coffee & Tea", "Vegetarian",
+];
+const RATING_STEPS = ["2.5", "3.0", "3.5", "4.0", "4.5"];
+const PRICE_LEVELS = [[1, "$"], [2, "$$"], [3, "$$$"], [4, "$$$$"]];
+
 function renderLookup() {
   const c = document.getElementById("content");
+  const s = state.search;
+  // Two-column layout: a dedicated search + filters sidebar on the left, results
+  // on the right. The left column has room, so the facets are always visible (no
+  // toggle needed).
   c.innerHTML = `
-    <div class="panel">
-      <h2>Find restaurants (Philadelphia seed)</h2>
-      <div class="search-filters">
-        <input id="s-q" placeholder="Name (typo-tolerant)…" value="${esc(state.search.q)}" />
-        <input id="s-cuisine" list="cuisine-options" placeholder="Cuisine — type or pick…" autocomplete="off" value="${esc(state.search.cuisine)}" />
-        <select id="s-price">
-          <option value="">Any price</option>
-          <option value="1">$</option><option value="2">$$</option>
-          <option value="3">$$$</option><option value="4">$$$$</option>
-        </select>
-        <div class="row">
-          <button class="primary" id="s-go">Search</button>
-          <button id="s-clear" title="Clear search">Clear</button>
+    <div class="lookup-cols">
+      <div class="panel lookup-search">
+        <h2>Search</h2>
+        <input id="s-q" placeholder="Search by name…" value="${esc(s.q)}" />
+        <div class="lookup-actions">
+          <button class="primary grow" id="s-go">Search</button>
+          <button id="s-clear" title="Clear search & filters">Clear</button>
+        </div>
+        <div class="facets-head">
+          <button class="link filters-toggle" id="filters-toggle">${state.filtersOpen ? "▾" : "▸"} Advanced Filters</button>
+        </div>
+        <div class="lookup-facets" id="lookup-facets" ${state.filtersOpen ? "" : "hidden"}>
+          <div class="facet-group">
+            <div class="facet-title">Price</div>
+            <div class="chip-row">${PRICE_LEVELS.map(([v, lbl]) =>
+              `<button class="chip-toggle${s.price.includes(v) ? " on" : ""}" data-price="${v}">${lbl}</button>`).join("")}</div>
+          </div>
+          <div class="facet-group">
+            <div class="facet-title">Minimum rating</div>
+            <select id="f-rating">
+              <option value="">Any</option>
+              ${RATING_STEPS.map(r => `<option value="${r}">${r}★ & up</option>`).join("")}
+            </select>
+          </div>
+          <div class="facet-group">
+            <div class="facet-title">Hours</div>
+            <select id="f-hours">
+              <option value="any">Anytime</option>
+              <option value="open_now">Open now</option>
+              <option value="open_24h">Open 24 hours</option>
+            </select>
+          </div>
+          <div class="facet-group">
+            <div class="facet-title">Cuisine</div>
+            <div class="chip-row">${COMMON_CUISINES.map(name =>
+              `<button class="chip-toggle${s.cuisine.includes(name) ? " on" : ""}" data-cuisine="${esc(name)}">${esc(name)}</button>`).join("")}</div>
+          </div>
         </div>
       </div>
-      <datalist id="cuisine-options"></datalist>
-      <div id="search-results"></div>
+      <div class="panel lookup-results">
+        <h2>Results</h2>
+        <div id="search-results"></div>
+      </div>
     </div>`;
-  document.getElementById("s-price").value = state.search.price;   // restore across re-renders
+  document.getElementById("f-rating").value = s.rating;
+  document.getElementById("f-hours").value = s.hours;
   document.getElementById("s-go").onclick = searchRestaurants;
   document.getElementById("s-clear").onclick = clearSearch;
-  const onEnter = e => { if (e.key === "Enter") searchRestaurants(); };
-  document.getElementById("s-q").addEventListener("keydown", onEnter);
-  document.getElementById("s-cuisine").addEventListener("keydown", onEnter);
-  // Picking a cuisine or price searches immediately (a filter should feel live,
-  // not require a separate Search click).
-  document.getElementById("s-cuisine").addEventListener("change", () => searchRestaurants());
-  document.getElementById("s-price").addEventListener("change", () => searchRestaurants());
-  loadCuisines();     // populate the datalist (cheap; cached in state after first call)
+  // Master toggle: show/hide the whole filter set at once.
+  document.getElementById("filters-toggle").onclick = () => {
+    state.filtersOpen = !state.filtersOpen;
+    document.getElementById("lookup-facets").hidden = !state.filtersOpen;
+    document.getElementById("filters-toggle").textContent = (state.filtersOpen ? "▾" : "▸") + " Advanced Filters";
+  };
+  // Rolling (live) search: results update as the user types, debounced. Enter
+  // searches immediately (cancelling the pending debounced call).
+  const liveSearch = debounce(searchRestaurants, 300);
+  document.getElementById("s-q").addEventListener("input", liveSearch);
+  document.getElementById("s-q").addEventListener("keydown",
+    e => { if (e.key === "Enter") { liveSearch.cancel(); searchRestaurants(); } });
+  // Rating / hours selects search immediately.
+  document.getElementById("f-rating").addEventListener("change", e => { s.rating = e.target.value; searchRestaurants(); });
+  document.getElementById("f-hours").addEventListener("change", e => { s.hours = e.target.value; searchRestaurants(); });
+  // Price / cuisine toggle chips search immediately.
+  for (const b of document.querySelectorAll("[data-price]")) {
+    b.onclick = () => { toggleInArray(s.price, Number(b.getAttribute("data-price"))); b.classList.toggle("on"); searchRestaurants(); };
+  }
+  for (const b of document.querySelectorAll("[data-cuisine]")) {
+    b.onclick = () => { toggleInArray(s.cuisine, b.getAttribute("data-cuisine")); b.classList.toggle("on"); searchRestaurants(); };
+  }
   renderResults();
 }
+// Toggle a value in an array in place (add if absent, remove if present).
+function toggleInArray(arr, v) {
+  const i = arr.indexOf(v);
+  if (i === -1) arr.push(v); else arr.splice(i, 1);
+}
 function clearSearch() {
-  document.getElementById("s-q").value = "";
-  document.getElementById("s-cuisine").value = "";
-  document.getElementById("s-price").value = "";
-  state.search = { q: "", cuisine: "", price: "" };
+  state.search = { q: "", cuisine: [], price: [], rating: "", hours: "any" };
   state.results = null;
-  renderResults();
+  renderLookup();   // full re-render resets the bar, chips, and selects
   document.getElementById("s-q").focus();
 }
 function renderResults() {
@@ -640,12 +1021,13 @@ function renderResults() {
 
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.appendChild(wantButton(r.id, r.name));
+    const wb = wantButton(r.id, r.name);
+    if (wb) actions.appendChild(wb);
     const visit = document.createElement("button");
     visit.textContent = (state.visitsByRestaurant[r.id] || []).length ? "Log another visit" : "🍽 Log visit";
     visit.onclick = () => openVisit(r.id, r.name);
     actions.appendChild(visit);
-    const custom = customListSelect(r.id);
+    const custom = listPickerControl(r.id);
     if (custom) actions.appendChild(custom);
     card.appendChild(actions);
     el.appendChild(card);
@@ -659,17 +1041,194 @@ function badgeHtml(restaurantId) {
   return "";
 }
 async function searchRestaurants() {
-  const q = document.getElementById("s-q").value.trim();
-  const cuisine = document.getElementById("s-cuisine").value.trim();
-  const priceMax = document.getElementById("s-price").value;
-  state.search = { q, cuisine, price: priceMax };   // persist so a later re-render keeps the query
+  const s = state.search;
+  s.q = (document.getElementById("s-q") || {}).value ? document.getElementById("s-q").value.trim() : "";
   const params = new URLSearchParams();
-  if (q) params.set("q", q);
-  if (cuisine) params.set("cuisine", cuisine);
-  if (priceMax) params.set("price_max", priceMax);
-  params.set("limit", "25");
-  try { state.results = await api("GET", "/restaurants?" + params.toString()); renderResults(); }
-  catch (e) { toast("Search failed: " + e.message, true); }
+  if (s.q) params.set("q", s.q);
+  for (const c of s.cuisine) params.append("cuisine", c);   // OR'd server-side
+  for (const p of s.price) params.append("price", p);       // exact levels
+  if (s.rating) params.set("rating_min", s.rating);
+  // Hours is filtered client-side (needs the user's local time + the hours JSON),
+  // so fetch a deeper page when it's active to survive the post-filter.
+  const hoursActive = s.hours && s.hours !== "any";
+  params.set("limit", hoursActive ? "60" : "25");
+  // Sequence guard: with live (debounced) search, a slower earlier request must
+  // not overwrite a newer one's results if it lands late.
+  const seq = (state.searchSeq = (state.searchSeq || 0) + 1);
+  try {
+    let results = await api("GET", "/restaurants?" + params.toString());
+    if (seq !== state.searchSeq) return;   // superseded by a newer search
+    if (hoursActive) {
+      results = results.filter(r => {
+        const hrs = (r.attributes || {}).hours;
+        return s.hours === "open_24h" ? is24hWeek(hrs) : isOpenNow(hrs);
+      });
+    }
+    state.results = results; renderResults();
+  } catch (e) { if (seq === state.searchSeq) toast("Search failed: " + e.message, true); }
+}
+
+// ---- Hours evaluation (client-side; mirrors YELP_SEED_HOURS semantics) --------
+const _toMins = t => { const [h, m] = String(t).split(":"); return parseInt(h, 10) * 60 + parseInt(m || "0", 10); };
+function is24hWeek(hours) {   // YELP_SEED_HOURS: every listed day 0:0-0:0 => open 24h
+  if (!hours) return false;
+  const vals = Object.values(hours);
+  return vals.length >= 6 && vals.every(v => v === _ZERO_SPAN);
+}
+// Is a "start-end" span open at `mins` minutes-past-midnight? A 0:0-0:0 span is a
+// closed day (unless the whole week is 0:0-0:0 — handled by is24hWeek). Spans that
+// wrap past midnight (end<=start, e.g. 17:0-2:0) are open from start until midnight.
+function _spanOpenAt(span, mins) {
+  if (!span || span === _ZERO_SPAN) return false;
+  const [a, b] = span.split("-");
+  const start = _toMins(a), end = _toMins(b);
+  if (isNaN(start) || isNaN(end)) return false;
+  return end > start ? (mins >= start && mins < end) : (mins >= start);
+}
+function isOpenNow(hours) {
+  if (!hours) return false;
+  if (is24hWeek(hours)) return true;
+  const now = new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (_spanOpenAt(hours[DAYS[now.getDay()]], mins)) return true;
+  // A past-midnight span belongs to yesterday (e.g. yesterday 17:0-2:0 keeps a
+  // place open until 2am today): open if now is before that span's end.
+  const ySpan = hours[DAYS[(now.getDay() + 6) % 7]];
+  if (ySpan && ySpan !== _ZERO_SPAN) {
+    const [a, b] = ySpan.split("-");
+    if (_toMins(b) <= _toMins(a) && mins < _toMins(b)) return true;
+  }
+  return false;
+}
+
+// ---- Recommendations page ----
+// Calls POST /recommendations (the retrieve → rank → render pipeline) and shows
+// the ranked picks with match scores + reasons. Works with or without an API
+// key server-side: without one the endpoint returns the offline ranking (mode
+// starts with "fallback").
+function renderRecommend() {
+  const c = document.getElementById("content");
+  const rec = state.recommend;
+  c.innerHTML = `
+    <div class="panel">
+      <h2>Recommendations</h2>
+      <p class="muted" style="margin:-2px 0 12px">Describe what you're in the mood for — the pipeline retrieves nearby
+        candidates and ranks them for your taste (learned from your visits &amp; feedback).</p>
+      <div class="field"><label>What are you looking for?</label>
+        <input id="r-query" placeholder="e.g. late-night noodles, casual, solo" value="${esc(rec.query)}" /></div>
+      <div class="rec-filters">
+        <div class="field"><label>Near (ZIP or neighborhood)</label>
+          <input id="r-near" placeholder="chinatown · rittenhouse · 19107…" value="${esc(rec.near)}" /></div>
+        <div class="field"><label>Max price</label>
+          <select id="r-price">
+            <option value="">Any</option>
+            <option value="1">$</option><option value="2">$$</option>
+            <option value="3">$$$</option><option value="4">$$$$</option>
+          </select></div>
+        <div class="field"><label>Cuisine (comma-separated)</label>
+          <input id="r-cuisine" placeholder="Noodles, Chinese" value="${esc(rec.cuisine)}" /></div>
+        <div class="field"><label>Party size</label>
+          <input id="r-party" type="number" min="1" max="20" value="${esc(String(rec.party || 2))}" /></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label class="muted" style="display:flex; align-items:center; gap:6px">
+          <input type="checkbox" id="r-open" ${rec.openNow ? "checked" : ""} /> Open now</label>
+        <button class="primary" id="r-go">Get recommendations</button>
+      </div>
+      <div id="rec-results" style="margin-top:16px"></div>
+    </div>`;
+  document.getElementById("r-price").value = rec.price || "";
+  document.getElementById("r-go").onclick = runRecommend;
+  document.getElementById("r-query").addEventListener("keydown", e => { if (e.key === "Enter") runRecommend(); });
+  renderRecResults();
+}
+async function runRecommend() {
+  const query = document.getElementById("r-query").value.trim();
+  if (!query) return toast("Describe what you're looking for", true);
+  const near = document.getElementById("r-near").value.trim();
+  const priceMax = document.getElementById("r-price").value;
+  const cuisineRaw = document.getElementById("r-cuisine").value.trim();
+  const party = parseInt(document.getElementById("r-party").value, 10) || 2;
+  const openNow = document.getElementById("r-open").checked;
+  state.recommend = { ...state.recommend, query, near, price: priceMax, cuisine: cuisineRaw, party, openNow };
+  const body = { query, party_size: party };
+  if (near) body.near = near;
+  if (priceMax) body.price_max = Number(priceMax);
+  if (cuisineRaw) body.cuisine = cuisineRaw.split(",").map(s => s.trim()).filter(Boolean);
+  if (openNow) body.open_now = true;
+
+  const btn = document.getElementById("r-go");
+  btn.disabled = true; btn.textContent = "Thinking…";
+  const el = document.getElementById("rec-results");
+  el.innerHTML = `<p class="muted">Retrieving and ranking candidates…</p>`;
+  try {
+    state.recommend.result = await api("POST", "/recommendations", body);
+    renderRecResults();
+  } catch (e) {
+    state.recommend.result = null;
+    el.innerHTML = `<p class="muted">Couldn't get recommendations: ${esc(humanizeAuthError(e.message))}</p>`;
+  } finally {
+    if (btn.isConnected) { btn.disabled = false; btn.textContent = "Get recommendations"; }
+  }
+}
+function renderRecResults() {
+  const el = document.getElementById("rec-results");
+  if (!el) return;
+  const res = state.recommend.result;
+  if (!res) {
+    el.innerHTML = `<p class="muted">No recommendations yet — set your criteria and hit “Get recommendations”.</p>`;
+    return;
+  }
+  if (!res.picks.length) {
+    el.innerHTML = `<p class="muted">No candidates matched. Try widening the price, cuisine, or area.</p>`;
+    return;
+  }
+  el.innerHTML = `<p class="muted" style="margin:0 0 10px">Ranked ${res.picks.length} of ${res.candidate_count} ` +
+    `candidate${res.candidate_count === 1 ? "" : "s"} · mode: ${esc(res.mode)}</p>`;
+  res.picks.forEach((p, i) => {
+    const r = p.restaurant || {};
+    if (r.id) state.detailCache[r.id] = r;
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "row";
+    const title = document.createElement("button");
+    title.className = "link title grow";
+    title.innerHTML = `${i + 1}. ${esc(r.name || p.restaurant_id)} ${badgeHtml(r.id)}`;
+    title.title = "View details";
+    title.onclick = () => openDetail(r.id);
+    titleRow.appendChild(title);
+    if (p.match_score != null) {
+      const score = document.createElement("span");
+      score.className = "score";
+      score.textContent = p.match_score + "% match";
+      titleRow.appendChild(score);
+    }
+    card.appendChild(titleRow);
+    card.insertAdjacentHTML("beforeend",
+      `<div class="meta">${price(r.price_level)} · ★${r.rating ?? "—"} (${r.rating_count ?? 0})` +
+      `${(r.categories || []).length ? " · " + esc(r.categories.join(", ")) : ""}</div>`);
+    if (p.reasons && p.reasons.length) {
+      card.insertAdjacentHTML("beforeend",
+        `<ul class="reasons">${p.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`);
+    }
+    const line = visitLine(r.id);
+    if (line) card.insertAdjacentHTML("beforeend", `<div class="visits">${line}</div>`);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const wb = wantButton(r.id, r.name);
+    if (wb) actions.appendChild(wb);
+    const visit = document.createElement("button");
+    visit.textContent = (state.visitsByRestaurant[r.id] || []).length ? "Log another visit" : "🍽 Log visit";
+    visit.onclick = () => openVisit(r.id, r.name);
+    actions.appendChild(visit);
+    const custom = listPickerControl(r.id);
+    if (custom) actions.appendChild(custom);
+    card.appendChild(actions);
+    el.appendChild(card);
+  });
 }
 
 // ---- Lists page ----
@@ -681,10 +1240,7 @@ function renderLists() {
         <div class="panel">
           <h2>Lists</h2>
           <div id="lists"></div>
-          <div class="row" style="margin-top:10px">
-            <input id="new-list-name" class="grow" placeholder="New list name" />
-            <button class="primary" id="new-list-go">＋</button>
-          </div>
+          <button class="primary new-list-btn" id="new-list-go">＋ New list</button>
         </div>
       </div>
       <div class="col">
@@ -703,8 +1259,7 @@ function renderLists() {
         </div>
       </div>
     </div>`;
-  document.getElementById("new-list-go").onclick = createList;
-  document.getElementById("new-list-name").addEventListener("keydown", e => { if (e.key === "Enter") createList(); });
+  document.getElementById("new-list-go").onclick = openListModal;
   const f = document.getElementById("list-filter");
   f.value = state.listFilter;
   f.addEventListener("input", () => { state.listFilter = f.value; renderItems(); });
@@ -808,7 +1363,7 @@ async function renderItems() {
 
     const actions = document.createElement("div");
     actions.className = "actions";
-    const custom = customListSelect(it.restaurant_id);
+    const custom = listPickerControl(it.restaurant_id);
     if (custom) actions.appendChild(custom);
 
     const edit = document.createElement("button"); edit.className = "tiny"; edit.textContent = "Edit note/tags";
@@ -826,15 +1381,27 @@ async function renderItems() {
   }
 }
 
-async function createList() {
-  const inp = document.getElementById("new-list-name");
-  const name = inp.value.trim();
-  if (!name) return toast("Enter a list name", true);
+// Create-list flow, via a modal (replaces the cramped inline name+＋ control).
+function openListModal() {
+  document.getElementById("cl-name").value = "";
+  document.getElementById("cl-err").textContent = "";
+  document.getElementById("list-modal").classList.add("show");
+  document.getElementById("cl-name").focus();
+}
+function closeListModal() {
+  document.getElementById("list-modal").classList.remove("show");
+}
+async function submitNewList() {
+  const name = document.getElementById("cl-name").value.trim();
+  const err = document.getElementById("cl-err");
+  if (!name) { err.textContent = "Please enter a list name."; return; }
   try {
     const l = await api("POST", "/lists", { name, type: "custom" });
-    inp.value = ""; state.selectedListId = l.id; await loadCore(); render();
+    closeListModal();
+    state.selectedListId = l.id;
+    await loadCore(); render();
     toast("Created “" + name + "”");
-  } catch (e) { toast("Create failed: " + e.message, true); }
+  } catch (e) { err.textContent = humanizeAuthError(e.message); }
 }
 async function renameList(l) {
   const name = prompt("Rename list:", l.name);
@@ -850,14 +1417,33 @@ async function deleteList(l) {
     await loadCore(); render(); toast("Deleted");
   } catch (e) { toast("Delete failed: " + e.message, true); }
 }
-async function editItem(listId, it) {
-  const note = prompt("Note:", it.note || "");
-  if (note == null) return;
-  const tagsRaw = prompt("Tags (comma-separated):", (it.tags || []).join(", "));
-  if (tagsRaw == null) return;
-  const tags = tagsRaw.split(",").map(t => t.trim()).filter(Boolean);
-  try { await api("PATCH", `/lists/${listId}/items/${it.restaurant_id}`, { note, tags }); renderItems(); toast("Updated"); }
-  catch (e) { toast("Update failed: " + e.message, true); }
+// Edit note & tags via a proper modal (replaces the old prompt() dialogs). Note
+// and tags are shared per-restaurant, so this write-through updates them wherever
+// the restaurant appears.
+function editItem(listId, it) {
+  state.pendingNote = { listId, restaurantId: it.restaurant_id };
+  const r = it.restaurant || {};
+  document.getElementById("note-modal-sub").textContent = r.name || "";
+  document.getElementById("n-note").value = it.note || "";
+  document.getElementById("n-tags").value = (it.tags || []).join(", ");
+  document.getElementById("note-modal").classList.add("show");
+  document.getElementById("n-note").focus();
+}
+function closeNote() {
+  state.pendingNote = null;
+  document.getElementById("note-modal").classList.remove("show");
+}
+async function submitNote() {
+  if (!state.pendingNote) return;
+  const { listId, restaurantId } = state.pendingNote;
+  const note = document.getElementById("n-note").value.trim();
+  const tags = document.getElementById("n-tags").value.split(",").map(t => t.trim()).filter(Boolean);
+  try {
+    await api("PATCH", `/lists/${listId}/items/${restaurantId}`, { note: note || null, tags });
+    closeNote();
+    renderItems();
+    toast("Note & tags saved");
+  } catch (e) { toast("Save failed: " + e.message, true); }
 }
 async function removeItem(listId, restaurantId) {
   try { await api("DELETE", `/lists/${listId}/items/${restaurantId}`); await loadCore(); render(); toast("Removed"); }
@@ -865,15 +1451,32 @@ async function removeItem(listId, restaurantId) {
 }
 
 // ---- Modal UX: click backdrop or press Escape to close ----
-for (const id of ["visit-modal", "detail-modal"]) {
-  document.getElementById(id).addEventListener("click", e => {
-    if (e.target.id === id) { id === "visit-modal" ? closeVisit() : closeDetail(); }
-  });
+const MODAL_CLOSERS = {
+  "visit-modal": closeVisit,
+  "detail-modal": closeDetail,
+  "note-modal": closeNote,
+  "list-modal": closeListModal,
+};
+for (const [id, close] of Object.entries(MODAL_CLOSERS)) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("click", e => { if (e.target.id === id) close(); });
 }
+// Close any open add-to-list picker when clicking outside it (native <details>
+// only toggles on its own summary, so it wouldn't dismiss on an outside click).
+function closeOpenPickers() {
+  document.querySelectorAll("details.listpick[open]").forEach(d => (d.open = false));
+}
+document.addEventListener("click", e => {
+  document.querySelectorAll("details.listpick[open]").forEach(d => {
+    if (!d.contains(e.target)) d.open = false;
+  });
+});
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  closeVisit(); closeDetail();
+  closeVisit(); closeDetail(); closeNote(); closeListModal(); closeOpenPickers();
 });
+// Enter submits the create-list modal (its input lives in static markup).
+document.getElementById("cl-name").addEventListener("keydown", e => { if (e.key === "Enter") submitNewList(); });
 
 // ---- Boot ----
 async function boot() {

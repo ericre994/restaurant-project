@@ -2,7 +2,7 @@
 from datetime import timedelta
 from typing import Dict, Iterable, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import models, security
@@ -42,21 +42,42 @@ class EmailTaken(Exception):
     """Signup with an email that already has an account."""
 
 
+class UsernameTaken(Exception):
+    """Signup with a username that's already claimed (case-insensitive)."""
+
+
 def normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
 def create_account(
-    db: Session, email: str, password: str, display_name: Optional[str] = None
+    db: Session,
+    email: str,
+    password: str,
+    username: str,
+    first_name: str,
+    last_name: str,
 ) -> models.User:
-    """Create a real account (hashed password) + its core lists. Raises
-    EmailTaken if the email is already registered."""
+    """Create a real account (hashed password) + its core lists. First/last name
+    and a unique @username are required; the display name shown in the UI is the
+    first name. Login stays by email. Raises EmailTaken / UsernameTaken on a
+    collision (username uniqueness is case-insensitive)."""
     email = normalize_email(email)
+    username = (username or "").strip()
+    first_name = (first_name or "").strip()
+    last_name = (last_name or "").strip()
     if db.scalar(select(models.User).where(models.User.email == email)):
         raise EmailTaken(email)
+    if db.scalar(
+        select(models.User).where(func.lower(models.User.username) == username.lower())
+    ):
+        raise UsernameTaken(username)
     user = models.User(
         email=email,
-        display_name=(display_name or "").strip() or email.split("@")[0],
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        display_name=first_name,  # UI greets by first name
         password_hash=security.hash_password(password),
     )
     db.add(user)
