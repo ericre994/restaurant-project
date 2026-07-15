@@ -107,7 +107,7 @@ _(Three fix-now batches shipped 2026-07-14 — see **Done**. No open fix-now ite
 - [x] Short description — #12
 -->
 
-### Docs sync — PRD & TDD to v0.5 (2026-07-14)
+### Docs sync — PRD & TDD to v0.5 (2026-07-14) — #25
 - [x] **PRD & TDD updated** to reflect this session's work (both bumped to v0.5, dated 2026-07-14):
   users table + signup gain `username`/`first_name`/`last_name` (display = first name); `PATCH`/`DELETE
   /visits/{id}`; `/restaurants` filters (`rating_min`, exact multi `price`, repeatable `cuisine`,
@@ -115,7 +115,7 @@ _(Three fix-now batches shipped 2026-07-14 — see **Done**. No open fix-now ite
   Filters toggle, add-to-list membership picker, visit edit/delete, note/tags & create-list modals);
   migration note for the new account columns.
 
-### Frontend / UX — fix-now batch #3 (2026-07-14, dev harness `backend/app/static/index.html`)
+### Frontend / UX — fix-now batch #3 (2026-07-14, dev harness `backend/app/static/index.html`) — #25
 - [x] **Add-to-list picker closes on outside click.** A global click handler dismisses any open
   `.listpick` `<details>` when the click lands outside it (Escape closes it too); the close-time
   reconcile now only re-renders when a membership actually changed. (`listPickerControl`,
@@ -129,7 +129,7 @@ _(Three fix-now batches shipped 2026-07-14 — see **Done**. No open fix-now ite
   panel. Each filter group is titled, and a single **Filters Hide/Show** master toggle collapses
   the whole set at once. (`renderLookup` + `.lookup-cols` / `.facets-head` CSS)
 
-### Frontend / UX + accounts — fix-now batch #2 (2026-07-14)
+### Frontend / UX + accounts — fix-now batch #2 (2026-07-14) — #25
 - [x] **Mandatory name + unique @username at signup; display name = first name.** Signup now
   requires first name, last name, and a unique `@username` (3–30 chars, letters/digits/underscore,
   case-insensitive uniqueness); login stays by email; the UI greets by first name. Backend: new
@@ -154,7 +154,7 @@ _(Three fix-now batches shipped 2026-07-14 — see **Done**. No open fix-now ite
   price**, partially addressing the parked "price is a max, not exact" backend decision (recommendations
   still uses `price_max`)._
 
-### Frontend / UX — fix-now batch (2026-07-14, dev harness `backend/app/static/index.html`)
+### Frontend / UX — fix-now batch #1 (2026-07-14, dev harness `backend/app/static/index.html`) — #25
 - [x] **Create-new-user flow & UI.** Redesigned signup: confirm-password field, show-password
   toggle, specific inline validation (email format, min length, password mismatch), friendlier
   copy/CTA. (`renderAuthGate`)
