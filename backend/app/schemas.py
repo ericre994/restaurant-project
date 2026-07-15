@@ -116,6 +116,16 @@ class VisitCreate(BaseModel):
     visited_at: Optional[datetime] = None
 
 
+class VisitUpdate(BaseModel):
+    """Edit a logged visit. Omitted fields are left unchanged (partial update via
+    exclude_unset); send a field explicitly (e.g. notes: null) to clear it."""
+
+    sentiment: Optional[str] = None
+    user_rating: Optional[int] = Field(default=None, ge=1, le=5)
+    notes: Optional[str] = None
+    visited_at: Optional[datetime] = None
+
+
 class VisitOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -133,13 +143,22 @@ class UserOut(BaseModel):
 
     id: str
     email: Optional[str] = None
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     display_name: Optional[str] = None
 
 
 class SignupRequest(BaseModel):
+    """Create an account. First/last name and a unique @username are required;
+    the display name shown in the UI is derived from the first name (login is by
+    email)."""
+
     email: str
     password: str = Field(min_length=8, description="at least 8 characters")
-    display_name: Optional[str] = None
+    username: str = Field(min_length=3, max_length=30, description="unique handle")
+    first_name: str = Field(min_length=1, max_length=60)
+    last_name: str = Field(min_length=1, max_length=60)
 
 
 class LoginRequest(BaseModel):

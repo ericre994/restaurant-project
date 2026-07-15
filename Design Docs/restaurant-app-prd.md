@@ -2,9 +2,9 @@
 
 ## Restaurant Discovery & Management App
 
-**Version:** 0.4 (Draft)
+**Version:** 0.5 (Draft)
 **Author:** Eric
-**Last updated:** July 8, 2026
+**Last updated:** July 14, 2026
 **Status:** In review — MVP slice partially implemented
 
 ---
@@ -28,22 +28,22 @@ There is no single product that closes the loop from *intent* (want to try) → 
 
 Be the system of record for a user's dining life: a place where saved intent compounds into a taste profile, and that taste profile powers recommendations that feel like they came from a friend who knows you, then gets you a table.
 
-### 1.4 Implementation status (July 13, 2026)
+### 1.4 Implementation status (July 14, 2026)
 
 An early backend slice is built (FastAPI; see the Technical Design Doc's Implementation status). This tracks MVP feature progress; targets and metrics below are unchanged.
 
 | Feature | Status |
 | ------- | ------ |
-| **User accounts** — email/password signup & login, hashed passwords, persisted sessions, so each person's lists are private and resume next visit | **Built** (backend + dev web UI login gate) |
-| List management — want-to-try / visited / custom lists; per-restaurant notes & tags (shared across lists), save `source`, visit sentiment; list rename, item edit, core-list exclusivity, multi-visit history with future-date rejection (§4.1) | **Built** (backend + dev web UI) |
-| Restaurant discovery / browse — typo-tolerant name search, cuisine typeahead, price filter, and a detail view (hours, features, map link to the actual place) (§4.1) | **Built** (backend + dev web UI) |
-| AI natural-language recommendations + reliability guards; **personalized offline ranking** (taste + query + price + distance) when the LLM is off; **ZIP / neighborhood** location resolution derived from the data (§4.2) | **Built** (backend; LLM path validated offline, real API not yet exercised) |
+| **User accounts** — email/password signup & login (signup requires **first/last name + a unique `@username`**; display name = first name), hashed passwords, persisted sessions, so each person's lists are private and resume next visit | **Built** (backend + dev web UI) |
+| List management — want-to-try / visited / custom lists; per-restaurant notes & tags (shared across lists), save `source`, visit sentiment; list rename, item edit, core-list exclusivity, multi-visit history with future-date rejection, **editable/deletable visits** (§4.1) | **Built** (backend + dev web UI) |
+| Restaurant discovery / browse — typo-tolerant name search plus **advanced filters** (multi-select price, minimum rating, hours [open now / open 24h], curated cuisine set), and a detail view (hours, features, map link to the actual place, visit history) (§4.1) | **Built** (backend + dev web UI) |
+| AI natural-language recommendations + reliability guards; **personalized offline ranking** (taste + query + price + distance) when the LLM is off; **ZIP / neighborhood** location resolution derived from the data (§4.2) | **Built** (backend + dev web UI surface; LLM path validated offline, real API not yet exercised) |
 | Taste profile from visits + feedback (§4.2) | **Built** (backend) |
 | Reservation availability alerts (§4.3) | Not started |
 | Reservation deep-linking (§4.4) | Not started |
 | Weekly recap / newsletter (§4.5) | Not started |
 
-Caveats: data is the academic-use-only Yelp Open Dataset (Philadelphia, **no NYC coverage**) for dev only; the only client so far is a dev-only web UI harness (served at `/app`, now behind a login/sign-up gate) for exercising the browse + list APIs — not the planned production mobile app; persistence is dev SQLite modeling the planned Postgres schema, with Alembic migrations (the latest adding user accounts — `password_hash` + a `sessions` table).
+Caveats: data is the academic-use-only Yelp Open Dataset (Philadelphia, **no NYC coverage**) for dev only; the only client so far is a dev-only web UI harness (served at `/app`, behind a login/sign-up gate) exercising the browse + list + recommendation APIs — not the planned production mobile app; persistence is dev SQLite modeling the planned Postgres schema, with Alembic migrations (the latest adding the `username`/`first_name`/`last_name` account columns, atop `password_hash` + a `sessions` table).
 
 ---
 
@@ -95,7 +95,7 @@ The foundational data model distinguishes two **mutually exclusive** core states
 - The two core states are **mutually exclusive**: saving to one removes the restaurant from the other, so moving between them is ≤2 taps and never leaves a place in both
 - Custom lists layered on top of the two core states (e.g., "Date Night," "Cheap Eats"), and are **additive** — a restaurant can sit in a core state *and* any number of custom lists at once. Custom lists can be renamed and deleted (core lists are protected)
 - Saved items remain editable after the fact (notes, tags)
-- Log each visit separately, building a per-restaurant visit history; a visit can't be dated in the future
+- Log each visit separately, building a per-restaurant visit history; a visit can't be dated in the future, and logged visits remain **editable and deletable** after the fact
 - Search and filter across all lists by cuisine, neighborhood, price, tags
 - Restaurant records hydrated from the restaurant data API (hours, price level, photos, location)
 

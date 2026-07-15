@@ -30,6 +30,26 @@ def test_cuisine_filter(client):
     assert names == ["Sushi Spot"]
 
 
+def test_cuisine_filter_matches_any_of_several(client):
+    # Multiple cuisine values are OR'd (match any).
+    names = {r["name"] for r in client.get("/restaurants?cuisine=pizza&cuisine=sushi").json()}
+    assert names == {"Pizza Place", "Sushi Spot"}
+
+
+def test_rating_min_filter(client):
+    # r1=4.5, r2=4.8, r3=5.0
+    names = {r["name"] for r in client.get("/restaurants?rating_min=4.9").json()}
+    assert names == {"Far Diner"}
+    names2 = {r["name"] for r in client.get("/restaurants?rating_min=4.6").json()}
+    assert names2 == {"Sushi Spot", "Far Diner"}
+
+
+def test_price_exact_multiselect(client):
+    # r1=$$, r2=$$$, r3=$ — selecting $ and $$$ excludes r1.
+    names = {r["name"] for r in client.get("/restaurants?price=1&price=3").json()}
+    assert names == {"Far Diner", "Sushi Spot"}
+
+
 def test_cuisines_endpoint_counts(client):
     cuisines = client.get("/restaurants/cuisines").json()
     by_name = {c["name"]: c["count"] for c in cuisines}

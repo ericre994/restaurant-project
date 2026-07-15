@@ -64,6 +64,11 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     email: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    # Unique @handle chosen at signup (identity/mentions); login is still by email.
+    username: Mapped[Optional[str]] = mapped_column(String, unique=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String)
+    last_name: Mapped[Optional[str]] = mapped_column(String)
+    # Shown in the UI chrome/greetings. Set to the first name for real accounts.
     display_name: Mapped[Optional[str]] = mapped_column(String)
     # PBKDF2 hash string ("pbkdf2_sha256$iters$salt$hash"). Null for the dev-stub
     # user and any account created via the X-User-Id bypass (no password).

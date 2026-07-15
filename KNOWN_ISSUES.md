@@ -33,6 +33,9 @@ reference is noted so the two stay in sync.
   recommendation `price_max`) returns every level ≤ N; the user expects picking `$$$$` to return
   only `$$$$`. Decide max-vs-exact (e.g. add an exact `price` param) and update the UI selector.
   (decision) — `routers/restaurants.py`, `recommender._sql_retrieve`, `app/static/index.html`
+  _Partially addressed: `/restaurants` now takes a repeatable exact `price` param and the lookup UI
+  uses multi-select exact price (2026-07-14). Still open for the **recommendation** path (`price_max`
+  in `recommender._sql_retrieve`)._
 _(Earlier fix-now backend items shipped — see **Done** below.)_
 
 ## Prototype / Recommender
@@ -56,35 +59,15 @@ _(Earlier fix-now backend items shipped — see **Done** below.)_
 ## Frontend / UX
 
 ### Fix now
-- [ ] **Create-new-user flow & UI.** The signup path and its UI are minimal — flesh out the
-  create-account experience (clearer fields, validation feedback, friendlier copy). (ux)
-  — `app/static/index.html` (`renderAuthGate`), `routers/auth.py`
-- [ ] **Name persists in the header after logout.** After **Log out**, the logged-in user's
-  name/label still shows; logout should fully clear the identity chrome. (correctness)
-  — `app/static/index.html` (`doLogout` / `setChrome`)
-- [ ] **Make the front page more inviting.** The login / landing screen is bare — give it a
-  warmer, more welcoming first impression. (ux)
-- [ ] **Rolling (live) restaurant search.** Results should update automatically as the user
-  types (debounced), instead of requiring a Search click. (ux)
-  — `app/static/index.html` (`renderLookup` / `searchRestaurants`)
-- [ ] **Hours show "12:00 AM – 12:00 AM" for closed days.** A `0:0-0:0` / empty span renders as
-  midnight-to-midnight instead of "Closed" in the restaurant detail view. (correctness)
-  — `app/static/index.html` (`hoursHtml` / `fmtTime`)
-- [ ] **Can't see past visit logs for a restaurant.** The per-restaurant visit history exists in
-  the API (`GET /visits?restaurant_id=`) but isn't surfaced in the detail view — add a way to
-  view logged visits (date, sentiment, notes). (ux)
-- [ ] **"Want to Try" button shows on already-Visited restaurants.** The toggle appears even when
-  a restaurant is in Visited, and clicking it moves the restaurant back to Want-to-Try (evicting
-  it from Visited). Decide intended behavior — hide the button when visited, or relabel it as an
-  explicit "move back". (correctness) — `app/static/index.html` (`wantButton` / `badgeHtml`)
-- [ ] **Recommendations tab.** Add a Recommendations page to the dev UI that calls
-  `POST /recommendations` (query + near / price / cuisine filters) and renders the ranked picks +
-  reasons — the pipeline has no UI surface yet. (ux)
+_(Three fix-now batches shipped 2026-07-14 — see **Done**. No open fix-now items; next batch goes here.)_
 
 ### Fix later
+- [ ] **Distinguish the search tool from the recommendation tool.** The lookup and Recommendations
+  surfaces overlap; reassess how the two should be separated / implemented. (decision) (ux)
+- [ ] **Geo-location for more accurate search.** Optionally use the user's location (consent-gated —
+  only if the user opts in) to improve search result relevance. (ux) — PRD Q4 (consent) adjacent
 - [ ] **Map feature.** Show restaurant locations on a map. (ux)
 - [ ] **Popup / modal boxes for fill-in sections.** Move inline fill-in fields into modals. (ux)
-- [ ] **UI update for the create-new-list flow.** (ux)
 
 > Two more items you wrote down landed in **Backend** because they're data-model / validation
 > changes, not just UI: *notes & tags belong to the restaurant* and *reject future-dated
@@ -95,6 +78,13 @@ _(Earlier fix-now backend items shipped — see **Done** below.)_
 
 - [ ] **Production data provider** — Google Places vs. Yelp Fusion (coverage, ToS, unit
   economics). Blocks NYC data and production readiness. (decision) — PRD Q1, TDD §9
+  - [ ] _TODO (2026-07-15): research the **Google Maps / Places API** — costing structure
+    (pricing tiers, per-request cost, free credit, which SKUs we'd hit), API-key/account setup,
+    and integration approach; write up unit economics at expected request volume._
+  - _When this lands, remove the Yelp-seed-only hours workaround (grep `YELP_SEED_HOURS`
+    in `app/static/index.html`): the seed encodes both "closed" and "open 24h" as
+    `0:0-0:0`, disambiguated by a day-pattern heuristic; the new provider should carry
+    explicit closed / 24-hour flags instead._
 - [ ] **Embedding model & dimension `N`** — pick the model and fix `N` before the pgvector
   migration. Until then `embedding` stays null and Stage 1 pre-ranks by rating. (decision)
   — TDD §9
@@ -116,6 +106,77 @@ _(Earlier fix-now backend items shipped — see **Done** below.)_
 <!-- Move checked items here with the PR number, e.g.:
 - [x] Short description — #12
 -->
+
+### Docs sync — PRD & TDD to v0.5 (2026-07-14) — #25
+- [x] **PRD & TDD updated** to reflect this session's work (both bumped to v0.5, dated 2026-07-14):
+  users table + signup gain `username`/`first_name`/`last_name` (display = first name); `PATCH`/`DELETE
+  /visits/{id}`; `/restaurants` filters (`rating_min`, exact multi `price`, repeatable `cuisine`,
+  client-side hours); expanded dev-UI description (Recommendations tab, two-column lookup + Advanced
+  Filters toggle, add-to-list membership picker, visit edit/delete, note/tags & create-list modals);
+  migration note for the new account columns.
+
+### Frontend / UX — fix-now batch #3 (2026-07-14, dev harness `backend/app/static/index.html`) — #25
+- [x] **Add-to-list picker closes on outside click.** A global click handler dismisses any open
+  `.listpick` `<details>` when the click lands outside it (Escape closes it too); the close-time
+  reconcile now only re-renders when a membership actually changed. (`listPickerControl`,
+  `closeOpenPickers`)
+- [x] **"Edit note/tags" uses a modal, not `prompt()`.** New note/tags modal (restaurant name +
+  note textarea + tags field), replacing the two chained browser prompts. (`editItem` / `submitNote`)
+- [x] **Create-new-list redesigned.** The cramped inline "name + ＋" is now a **＋ New list** button
+  opening a titled create-list modal with inline validation. (`openListModal` / `submitNewList`)
+- [x] **Two-column lookup layout.** Search + filters (price / rating / hours / cuisine) live in a
+  left sidebar; results render in a right column. Replaces the stacked bar + collapsible filter
+  panel. Each filter group is titled, and a single **Filters Hide/Show** master toggle collapses
+  the whole set at once. (`renderLookup` + `.lookup-cols` / `.facets-head` CSS)
+
+### Frontend / UX + accounts — fix-now batch #2 (2026-07-14) — #25
+- [x] **Mandatory name + unique @username at signup; display name = first name.** Signup now
+  requires first name, last name, and a unique `@username` (3–30 chars, letters/digits/underscore,
+  case-insensitive uniqueness); login stays by email; the UI greets by first name. Backend: new
+  `users.username`/`first_name`/`last_name` columns (`models.py`), `services.create_account` +
+  `UsernameTaken`, `SignupRequest`/`UserOut` (`schemas.py`), `routers/auth.py` validation, migration
+  `c3d4e5f6a7b8` (nullable columns so existing accounts stay valid; upgrade+downgrade exercised).
+  Frontend: redesigned signup form (`renderAuthGate`). Covered by `tests/test_auth.py`.
+- [x] **Edit + delete past visits.** `PATCH`/`DELETE /visits/{id}` (owner-only; PATCH re-validates
+  future date + sentiment, leaves list membership untouched). The detail view's visit history now
+  has per-visit **Edit** (reuses the visit modal, pre-filled) and **Delete**. Covered by
+  `tests/test_visit_edit.py`.
+- [x] **"Add to list" shows every list with membership marks.** Replaced the custom-only dropdown
+  with a disclosure listing all lists, each with a checkbox marking membership; toggling adds/removes
+  and reconciles on close. `loadCore` now builds `listMembership` across all lists.
+  (`listPickerControl` / `toggleListMembership`)
+- [x] **Unified search bar + advanced filters (lookup page).** Single name search bar + a **⚙ Filters**
+  disclosure (with active-count badge): price ($–$$$$ multi-select chips), minimum rating (2.5–4.5
+  by 0.5), cuisine (curated common set as toggle chips), and hours (anytime / open now / open 24h).
+  Backend: `/restaurants` gained `rating_min` and repeatable `price` (exact levels) + `cuisine`
+  (OR'd); hours filtered client-side (mirrors `YELP_SEED_HOURS`, uses the user's local time).
+  Covered by `tests/test_restaurants.py`. _Note: this also gives the lookup page **exact multi-select
+  price**, partially addressing the parked "price is a max, not exact" backend decision (recommendations
+  still uses `price_max`)._
+
+### Frontend / UX — fix-now batch #1 (2026-07-14, dev harness `backend/app/static/index.html`) — #25
+- [x] **Create-new-user flow & UI.** Redesigned signup: confirm-password field, show-password
+  toggle, specific inline validation (email format, min length, password mismatch), friendlier
+  copy/CTA. (`renderAuthGate`)
+- [x] **Name persists in the header after logout.** Root cause was CSS — `nav`/`.who`
+  `display:flex` overrode the `hidden` attribute, so the chrome never hid. Added
+  `nav[hidden], .who[hidden] { display: none }` and clear the label in `setChrome`.
+- [x] **Front page more inviting.** New split landing: gradient brand hero, tagline, three
+  feature bullets; stacks on mobile. (`renderAuthGate` + `.landing*` CSS)
+- [x] **Rolling (live) restaurant search.** Debounced (300 ms) `input` on name/cuisine; Enter
+  cancels the pending call; request-sequence guard prevents a slow response overwriting a newer
+  one. (`renderLookup` / `searchRestaurants`)
+- [x] **Hours "12:00 AM – 12:00 AM" fixed.** `0:0-0:0` is disambiguated by context — an all-zero
+  week renders "Open 24 hours" (Wawa, McDonald's, diners), a lone zero-day renders "Closed" (the
+  "closed Mondays" pattern). Yelp-seed-specific; tagged `YELP_SEED_HOURS` to remove with the
+  production data provider. (`hoursHtml`)
+- [x] **Past visit logs surfaced.** New "Your visits" section in the detail modal (date ·
+  sentiment · rating · notes), reading already-loaded `state.visitsByRestaurant` (no extra fetch).
+- [x] **"Want to Try" hidden on already-Visited restaurants.** `wantButton` returns null when the
+  restaurant is in Visited (both call sites skip it); "Log another visit" remains the action.
+- [x] **Recommendations tab.** New nav page + route calling `POST /recommendations`
+  (query + near / price / cuisine / party / open-now), rendering ranked picks with match % and
+  reasons, wired to the shared want/visit/detail controls. (`renderRecommend` / `runRecommend`)
 
 ### Backend rework — #20
 - [x] **`_sql_retrieve` tie-ordering made deterministic.** Both `retrieve()` and `_sql_retrieve`
