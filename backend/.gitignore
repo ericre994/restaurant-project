@@ -1,6 +1,9 @@
 # Local dev SQLite databases
 *.db
 
+# Local secrets — real API keys live here, never commit. Template: .env.example
+.env
+
 # Python
 __pycache__/
 *.py[cod]

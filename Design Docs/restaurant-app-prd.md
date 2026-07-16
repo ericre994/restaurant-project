@@ -178,7 +178,7 @@ Generate a weekly round up / newsletter summarizing the user's interations with 
 
 ## 7. Technical Considerations
 
-- **Restaurant data:** Google Places vs. Yelp Fusion under evaluation. Decision criteria: coverage in launch market, photo/hours data quality, pricing at projected query volume, ToS compatibility with caching restaurant records.
+- **Restaurant data:** Google Places vs. Yelp Fusion under evaluation. Decision criteria: coverage in launch market, photo/hours data quality, pricing at projected query volume, ToS compatibility with caching restaurant records. *Google side de-risked (2026-07-15): Cloud project provisioned, Places API (New) + Geocoding enabled, and a working Text Search retrieval provider built against the pipeline (see TDD §4.1 / §5). Cost model verified — post-March-2025, the flat $200 credit is replaced by per-SKU free tiers (Text Search Enterprise ~$35/1k), and each call is **billed at the most expensive field in the mask**, so the "one Enterprise Text Search per query → ≤20 candidates" design keeps unit cost to a single billable event. The **caching constraint is now the key differentiator** for the decision below: Google's ToS permits storing `place_id` indefinitely but restricts caching other Places content, which conflicts with a durable local restaurant cache.*
 - **LLM layer:** Claude API for ranking/reasoning. Static system prompt + dynamic user message (taste profile, context, candidates) + enforced JSON output schema.
 - **Cost control:** Cap candidate set size per query; cache recommendations for identical context windows; monitor per-recommendation cost as a first-class metric.
 - **Privacy:** Taste profiles and visit history are personal data: encrypted at rest, never shared without explicit opt-in, exportable/deletable per GDPR/CCPA.
@@ -188,7 +188,7 @@ Generate a weekly round up / newsletter summarizing the user's interations with 
 
 ## 8. Open Questions
 
-1. Google Places vs. Yelp Fusion: which wins on launch-market coverage and unit economics?
+1. Google Places vs. Yelp Fusion: which wins on launch-market coverage and unit economics? *(Partly advanced 2026-07-15: Google unit economics are now known and acceptable, and the integration is scaffolded. Remaining blockers to a final call — launch-market (NYC) coverage/quality comparison, and reconciling Google's caching ToS with the local restaurant cache. The provider is not yet wired into `recommend()` pending this decision.)*
 2. What's the minimum viable taste profile at onboarding (cold-start problem): explicit quiz, import from Google Maps saves, or both?
 3. Availability polling: is there a compliant data source for Resy/OpenTable availability pre-partnership, or does this feature require the partnership to ship?
 4. Should "visited" auto-detect via location permissions (with consent), or stay fully manual in MVP?
