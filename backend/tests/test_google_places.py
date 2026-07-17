@@ -192,3 +192,43 @@ def test_retrieve_http_error_surfaces_status():
             gp.retrieve("x", proto.Constraints(), api_key="TEST", client=client)
     assert exc.value.status == 403
     assert "PERMISSION_DENIED" in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# get_details(): lazy refresh-on-read
+# --------------------------------------------------------------------------
+def test_get_details_maps_place_and_sends_details_mask():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["key"] = request.headers.get("X-Goog-Api-Key")
+        seen["mask"] = request.headers.get("X-Goog-FieldMask")
+        return httpx.Response(200, json=_place("ChIJ_x", 4.6, 210, *PHILLY))
+
+    with _client(handler) as client:
+        seed = gp.get_details("ChIJ_x", api_key="SECRET", client=client)
+
+    assert seen["url"].endswith("/v1/places/ChIJ_x")   # place_id in the path
+    assert seen["key"] == "SECRET"
+    # Details mask uses bare field names (no "places." prefix) and stays Enterprise.
+    assert "rating" in seen["mask"] and "places." not in seen["mask"]
+    assert "reviews" not in seen["mask"]
+    assert seed["id"] == "ChIJ_x" and seed["rating"] == 4.6
+    assert seed["source"] == "google_places"
+
+
+def test_get_details_404_raises_with_status():
+    def handler(request):
+        return httpx.Response(404, json={"error": {"message": "NOT_FOUND"}})
+
+    with _client(handler) as client:
+        with pytest.raises(gp.GooglePlacesError) as exc:
+            gp.get_details("dead_id", api_key="TEST", client=client)
+    assert exc.value.status == 404
+
+
+def test_get_details_missing_key_raises(monkeypatch):
+    monkeypatch.delenv(gp.ENV_KEY, raising=False)
+    with pytest.raises(gp.GooglePlacesError, match=gp.ENV_KEY):
+        gp.get_details("x", api_key=None)

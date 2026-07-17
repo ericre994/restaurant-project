@@ -47,6 +47,7 @@ import httpx
 from .._proto import proto
 
 SEARCH_TEXT_URL = "https://places.googleapis.com/v1/places:searchText"
+PLACE_DETAILS_URL = "https://places.googleapis.com/v1/places/"  # + place_id
 
 #: Enterprise-tier field mask — the ranker's fields, and nothing that would bump
 #: the call to the pricier Atmosphere tier. Keep in sync with ``_map_place``.
@@ -64,6 +65,10 @@ FIELD_MASK = ",".join(
         "places.regularOpeningHours",
     ]
 )
+
+#: Place Details returns a single (unwrapped) place, so its field mask uses the
+#: bare field names — the same set as FIELD_MASK without the ``places.`` prefix.
+DETAILS_FIELD_MASK = ",".join(f.split("places.", 1)[-1] for f in FIELD_MASK.split(","))
 
 ENV_KEY = "GOOGLE_MAPS_API_KEY"
 
@@ -279,6 +284,54 @@ def retrieve(
 
     seed.sort(key=_prerank_key)
     return seed[: proto.CANDIDATE_CAP]
+
+
+def get_details(
+    place_id: str,
+    *,
+    api_key: Optional[str] = None,
+    client: Optional[httpx.Client] = None,
+    timeout: float = 10.0,
+) -> Optional[Dict[str, Any]]:
+    """Fetch one place via **Place Details (New)** and map it to a seed dict.
+
+    Used for lazy refresh-on-read: when a cached row is past its TTL, one Details
+    call refreshes just that place (the cost-optimal pattern — no fan-out). Uses
+    the same Enterprise field set as the search path, so the refreshed row carries
+    the same fields. Returns None if the payload is unusable; raises
+    ``GooglePlacesError`` (``status`` set) on a missing key or an API error — a
+    404 means the place_id is gone.
+
+    ``client`` is injectable for testing (an ``httpx.Client`` with a mock
+    transport); by default a short-lived client is created per call.
+    """
+    key = _resolve_api_key(api_key)
+    headers = {
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": DETAILS_FIELD_MASK,
+    }
+
+    owns_client = client is None
+    client = client or httpx.Client(timeout=timeout)
+    try:
+        resp = client.get(PLACE_DETAILS_URL + place_id, headers=headers)
+    except httpx.HTTPError as exc:
+        raise GooglePlacesError(f"Place Details request failed: {exc}") from exc
+    finally:
+        if owns_client:
+            client.close()
+
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = (resp.json().get("error") or {}).get("message", "")
+        except ValueError:
+            detail = resp.text[:200]
+        raise GooglePlacesError(
+            f"Place Details returned {resp.status_code}: {detail}", status=resp.status_code
+        )
+
+    return _map_place(resp.json())
 
 
 def _main(argv: Optional[List[str]] = None) -> int:

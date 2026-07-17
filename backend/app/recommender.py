@@ -29,7 +29,7 @@ from . import cache, models, schemas, taste
 from ._proto import proto
 from .providers import google_places
 
-GOOGLE_SOURCE = "google_places"
+GOOGLE_SOURCE = cache.GOOGLE_SOURCE
 
 LANDMARKS = proto.LANDMARKS
 

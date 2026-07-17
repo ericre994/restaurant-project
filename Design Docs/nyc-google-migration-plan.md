@@ -112,9 +112,21 @@ candidates and one can be saved to Want-to-Try.
 
 ---
 
-## Phase 2 — Refresh-on-read for detail / browse
+## Phase 2 — Refresh-on-read for detail / browse — ✅ DONE (2026-07-17)
 
 **Goal:** stale rows self-heal on access; detail views stay fresh.
+
+*Shipped:* `google_places.get_details(place_id)` — Place Details (New), the same
+Enterprise field set with the bare-name `DETAILS_FIELD_MASK`. `cache.is_stale`
+(reuses the `services._aware` convention for SQLite's naive datetimes) +
+`cache.refresh_if_stale(db, row, fetch=...)`: refreshes a stale **google_places**
+row via one lazy Details call, **serves the stale copy on any fetch error** (no
+500), stores a refreshed `place_id` if Google returns one, and leaves seed/fresh
+rows untouched. Wired into `GET /restaurants/{id}` only (single-place — never
+browse/search, to keep it one billable Details call per opened restaurant). Field
+application is shared with the write-through path (`cache._apply_candidate`).
+Tests: +10 (`test_refresh_on_read.py` 7, `get_details` in `test_google_places.py`
+3); suite 114 → 124.
 
 - `GET /restaurants/{id}`: if a Google-sourced row is past `expires_at`, refresh
   it via a single lazy **Place Details** call before returning (the cost-optimal
