@@ -83,12 +83,24 @@ _(Three fix-now batches shipped 2026-07-14 — see **Done**. No open fix-now ite
     account + key setup, and integration approach. See the `google-maps-integration` memo._
   - [x] _Done (2026-07-17): the Google Text Search provider is **wired into `recommend()`
     behind a `RECS_PROVIDER` toggle** (`seed` default | `google`), with a seed-path fallback
-    on error. Both sources are now runnable; what remains is choosing the **default** live
-    source and reconciling Google's caching ToS with the restaurant cache._
-  - _When this lands, remove the Yelp-seed-only hours workaround (grep `YELP_SEED_HOURS`
-    in `app/static/index.html`): the seed encodes both "closed" and "open 24h" as
-    `0:0-0:0`, disambiguated by a day-pattern heuristic; the new provider should carry
-    explicit closed / 24-hour flags instead._
+    on error. Both sources are now runnable._
+  - [x] _Done (2026-07-17, session 7): the **NYC/Google live-source migration** shipped
+    (merged to `master`, PRs #28–#30) — see `Design Docs/nyc-google-migration-plan.md`.
+    Phase 0: `restaurants.expires_at` + `raw` TTL-cache columns (migration `d4e5f6a7b8c9`).
+    Phase 1: write-through cache (`app/cache.py::upsert_candidates`) — Google picks are
+    persisted and saveable, id rewritten place_id → internal UUID. Phase 2: refresh-on-read
+    (`GET /restaurants/{id}` via lazy Place Details, serves stale on error). Phase 3: layered
+    NYC location resolution (`app/geo_nyc.py` curated centroids + `google_geocoding.py`).
+    Phase 4: market cutover — google-mode default center (`RECS_DEFAULT_CENTER`), dev/prod
+    split documented. 141 backend tests, all offline._
+  - [ ] _Still open (decision): make Google the **default** live source (currently `seed`),
+    reconcile Google's caching ToS with the restaurant cache (treated as a ≤30-day
+    refresh-on-read cache), and **Phase 5** optional grid pre-warm. **User action:** paste the
+    rotated `GOOGLE_MAPS_API_KEY` into `backend/.env` for the first live call._
+  - _When Google is the live default, remove the Yelp-seed-only hours workaround (grep
+    `YELP_SEED_HOURS` in `app/static/index.html`): the seed encodes both "closed" and
+    "open 24h" as `0:0-0:0`, disambiguated by a day-pattern heuristic; Google carries
+    explicit closed / business-status flags instead._
 - [ ] **Embedding model & dimension `N`** — pick the model and fix `N` before the pgvector
   migration. Until then `embedding` stays null and Stage 1 pre-ranks by rating. (decision)
   — TDD §9
