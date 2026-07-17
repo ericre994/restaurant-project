@@ -4,8 +4,8 @@ Focus: take the Google Places work from "scaffolded provider" all the way to a *
 complete, ToS-compliant Google-live-source foundation for the NYC launch market**. Started by
 wiring the provider into the pipeline (session 6's carried-forward item), then — after the user
 confirmed the direction — designed and built the four engineering phases of a Philly→NYC data
-migration. Ended at **141 backend tests** (up from 103 at the start) across **three stacked PRs**,
-all pushed, none merged.
+migration. Ended at **141 backend tests** (up from 103 at the start) across **three PRs (#28 → #29 → #30),
+all merged into `master`** by the end of the session.
 
 Working style: heavy on **decision-framing before code**. The user asked feasibility questions
 ("can I scrape Google to replicate the Yelp dataset for NYC?") and I answered with the ToS reality
@@ -92,16 +92,18 @@ memo), not re-derived.
 
 - Backend suite: **141 passed** (103 → 141; +38). Fully green, fully offline (MockTransport +
   mocked fetches; no key/network).
-- **Three stacked PRs, all pushed, none merged.** Merge order: **#28 → #29 → #30** (each needs the
-  prior). Working tree clean on `nyc-location-resolution`.
+- **All three PRs merged into `master`** (later in the session, in order): **#28** (toggle) →
+  **#29** (cache, Phases 0–2) → **#30** (location + cutover, Phases 3–4). Each merge required
+  updating the branch with `master` and a passing required CI `test` check (branch protection);
+  each stacked PR was retargeted to `master` after its base merged. The three feature branches were
+  then deleted (remote + local) — repo is back to a single `master` branch. Working tree clean.
 
 ## Next up
 
 1. **User action:** paste the rotated `GOOGLE_MAPS_API_KEY` into `backend/.env` (search + geocoding
    both use it), then run the smoke CLI / a live `RECS_PROVIDER=google` request against NYC.
-2. **Merge the stack** (#28 → #29 → #30).
-3. **Phase 5 (optional):** grid pre-warm — only if cold-cache latency in launch neighborhoods bites;
+2. **Phase 5 (optional):** grid pre-warm — only if cold-cache latency in launch neighborhoods bites;
    the write-through fills the cache lazily otherwise.
-4. On paid-account upgrade: set the per-day quota hard-caps the free trial blocked.
-5. Consider folding `restaurant_notes` / `list_items.source` / `visits.sentiment` and the new
+3. On paid-account upgrade: set the per-day quota hard-caps the free trial blocked.
+4. Consider folding `restaurant_notes` / `list_items.source` / `visits.sentiment` and the new
    cache columns back into the TDD §5.1 tables (schema-vs-docs drift, pre-existing).
