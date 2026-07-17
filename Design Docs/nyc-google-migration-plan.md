@@ -142,9 +142,19 @@ does not.
 
 ---
 
-## Phase 3 — NYC location resolution
+## Phase 3 — NYC location resolution — ✅ DONE (2026-07-17)
 
 **Goal:** `near=` works for NYC, not just Philadelphia.
+
+*Shipped:* `_resolve_location` is now layered — explicit lat/lng → the DB-derived
+index (Philly seed neighborhoods/ZIPs, plus any cached NYC ZIP centroids) →
+curated NYC neighborhoods (`app/geo_nyc.py`, ~55 neighborhood/borough centroids,
+reusing `proto.GeoIndex` for exact + fuzzy matching) → the Geocoding API
+(`app/providers/google_geocoding.py`, NYC-biased, one call on a cache/curated
+miss) → a guidance `ValueError`. Philly dev behavior is unchanged (DB index tried
+first). Tests: +12 (`test_geocoding.py` 6, `test_geo_nyc.py` 6); suite 124 → 136.
+Verified end-to-end: `williamsburg`/`astoria` resolve to NYC (200), `chinatown`/
+`19107` still resolve to Philadelphia, unknown 422s.
 
 - Replace/augment the Philly-seed `_geo_index` with: (a) the **Geocoding API**
   (already enabled) for arbitrary text → coords, and/or (b) a small curated **NYC
@@ -160,9 +170,18 @@ geocoding helper, possibly a static NYC-neighborhoods data file.
 
 ---
 
-## Phase 4 — Market cutover & dev/prod split
+## Phase 4 — Market cutover & dev/prod split — ✅ DONE (2026-07-17)
 
 **Goal:** run NYC/Google in production while keeping tests offline & deterministic.
+
+*Shipped:* live (`google`) requests with no location now default to a market
+center — `RECS_DEFAULT_CENTER="lat,lng"`, else the NYC (Manhattan) centroid
+(`recommender._default_center`, applied only on the google path; the seed path
+still leaves `near` None → unfiltered Philly fixture). `.env.example` documents the
+`seed` (dev/test, offline) vs `google` (prod NYC) split, `RECS_DEFAULT_CENTER`, and
+`RESTAURANT_CACHE_TTL_DAYS`; CLAUDE.md's Stage-1 section describes the cutover.
+Tests stay on the Philly seed (`RECS_PROVIDER` unset → seed). Tests: +5
+(`test_market_cutover.py`); suite 136 → 141.
 
 - Offline tests stay on the **Philly Yelp seed** (`RECS_PROVIDER=seed`, no
   key/network) — the deterministic fixture. Google stays MockTransport-tested,

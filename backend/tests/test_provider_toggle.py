@@ -106,9 +106,15 @@ def test_google_error_falls_back_to_seed(db, user, monkeypatch):
         raise google_places.GooglePlacesError("GOOGLE_MAPS_API_KEY is not set")
 
     monkeypatch.setattr(google_places, "retrieve", _fail)
-    result = recommender.recommend(db, user, query="tasty", provider="google")
+    # Explicit Philly location so the seed rows are in range on fallback. (With no
+    # location, google mode defaults to the NYC center, which the fallback also
+    # uses — correct in prod where the cache holds NYC rows, but the dev seed is
+    # Philadelphia, so it would return nothing.)
+    result = recommender.recommend(
+        db, user, query="tasty", lat=39.9554, lng=-75.1555, radius_km=2.0, provider="google"
+    )
     assert result.retrieval.startswith("seed (google fallback:")
-    assert result.candidate_count == 3  # served by the seed path, user still gets results
+    assert result.candidate_count == 2  # r1/r2 near the point; r3 (Pittsburgh) out of range
 
 
 def test_retrieval_source_is_logged(db, user, monkeypatch):
