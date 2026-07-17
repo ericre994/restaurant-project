@@ -208,6 +208,28 @@ def _resolve_provider(provider: Optional[str]) -> str:
     return name or DEFAULT_PROVIDER
 
 
+#: Fallback search center for the live (Google) market when a request supplies no
+#: location. Text Search without a location bias would return unbounded results,
+#: so NYC-live requests need a default; overridable per-deploy via
+#: RECS_DEFAULT_CENTER="lat,lng". Default: Manhattan (midtown-ish) centroid.
+_DEFAULT_CENTER_ENV = "RECS_DEFAULT_CENTER"
+_NYC_CENTER = geo_nyc.NYC_NEIGHBORHOODS["new york"]
+
+
+def _default_center() -> Tuple[float, float]:
+    """The market default search center: RECS_DEFAULT_CENTER ("lat,lng") if set and
+    well-formed, else the NYC centroid. Only used for the live path (see
+    recommend); the seed path leaves `near` None and filters nothing."""
+    val = os.getenv(_DEFAULT_CENTER_ENV, "").strip()
+    if val:
+        try:
+            lat_s, lng_s = val.split(",")
+            return (float(lat_s), float(lng_s))
+        except ValueError:
+            pass  # malformed -> fall back to the NYC centroid
+    return _NYC_CENTER
+
+
 def _google_query(query: str, c: "proto.Constraints") -> str:
     """Fold structured cuisine keywords into the natural-language text query.
 
@@ -272,8 +294,15 @@ def recommend(
     RECS_PROVIDER env var, else the "seed" dev default); `result.retrieval`
     records which source actually served the request. Stages 2-3 (rank/render)
     reuse the prototype unchanged regardless of source.
+
+    In the live (Google) market a request with no location defaults to the market
+    center (`_default_center`) so Text Search stays local; the seed path leaves
+    `near` None (no geo filter over the static Philly fixture).
     """
+    resolved_provider = _resolve_provider(provider)
     coords = _resolve_location(db, near, lat, lng)
+    if coords is None and resolved_provider == "google":
+        coords = _default_center()
     constraints = proto.Constraints(
         party_size=party_size,
         near=coords,
@@ -285,9 +314,7 @@ def recommend(
     )
     profile = load_taste_profile(db, user)
 
-    candidates, retrieval = _retrieve_candidates(
-        db, query, constraints, _resolve_provider(provider)
-    )
+    candidates, retrieval = _retrieve_candidates(db, query, constraints, resolved_provider)
     compact = [proto.compact_candidate(r, constraints) for r in candidates]
     picks, mode = proto.rank(query, profile, compact, constraints)
     by_id = {r["id"]: r for r in candidates}
