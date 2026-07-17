@@ -14,10 +14,33 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_DB_FILE.as_posix()}"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import delete, select  # noqa: E402
 
 from app import models  # noqa: E402
 from app.db import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _clean_live_cache_rows():
+    """The DB is session-scoped and the Philly seed is a fixed 3-row fixture, but
+    the Google write-through cache (RECS_PROVIDER=google) persists extra
+    `google_places` rows. Remove them (and their dependents) after each test so
+    seed-count invariants hold regardless of run order. No-op for tests that never
+    touch the live path."""
+    yield
+    s = SessionLocal()
+    try:
+        gids = s.scalars(
+            select(models.Restaurant.id).where(models.Restaurant.source == "google_places")
+        ).all()
+        if gids:
+            for m in (models.ListItem, models.RestaurantNote, models.Visit):
+                s.execute(delete(m).where(m.restaurant_id.in_(gids)))
+            s.execute(delete(models.Restaurant).where(models.Restaurant.id.in_(gids)))
+            s.commit()
+    finally:
+        s.close()
 
 
 @pytest.fixture(scope="session", autouse=True)

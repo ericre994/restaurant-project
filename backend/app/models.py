@@ -115,13 +115,22 @@ class TasteProfile(Base):
 
 
 class Restaurant(Base):
-    """Cache of external restaurant data (here, the Yelp Philadelphia seed)."""
+    """Cache of external restaurant data (the Yelp Philadelphia seed today; Google
+    Places rows when RECS_PROVIDER=google — see recommender / providers).
+
+    For Google-sourced rows this is a **refresh-on-read cache**: `expires_at`
+    bounds how long the descriptive fields may be served before a refresh, and
+    `raw` retains the provider payload. Google's terms let us keep `place_id`
+    (stored in `source_id`) indefinitely but cap caching of other content, so a
+    stale row's fields are re-fetched, not kept forever. Seed rows leave
+    `expires_at` null (never expire — they're a static dev fixture).
+    """
 
     __tablename__ = "restaurants"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     source: Mapped[Optional[str]] = mapped_column(String)
-    source_id: Mapped[Optional[str]] = mapped_column(String)
+    source_id: Mapped[Optional[str]] = mapped_column(String)  # external id, e.g. Google place_id
     name: Mapped[Optional[str]] = mapped_column(String)
     location: Mapped[Optional[dict]] = mapped_column(JSON)          # GeoJSON Point
     address: Mapped[Optional[str]] = mapped_column(Text)
@@ -130,6 +139,13 @@ class Restaurant(Base):
     attributes: Mapped[Optional[dict]] = mapped_column(JSON)        # {features, hours}
     rating: Mapped[Optional[float]] = mapped_column(Float)
     rating_count: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # Cache freshness (TDD §5.1). `expires_at` null = never expires (the static
+    # seed); a timestamp = refresh the descriptive fields once now passes it.
+    # `raw` keeps the untouched provider payload so fields can be re-derived
+    # without another fetch.
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    raw: Mapped[Optional[dict]] = mapped_column(JSON)
 
     # Derived/denormalized columns that make SQL retrieval indexable. On Postgres
     # the canonical form is location geography(Point) (GIST) + a GIN index on

@@ -25,9 +25,11 @@ from typing import List, Optional, Tuple
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from . import models, schemas, taste
+from . import cache, models, schemas, taste
 from ._proto import proto
 from .providers import google_places
+
+GOOGLE_SOURCE = cache.GOOGLE_SOURCE
 
 LANDMARKS = proto.LANDMARKS
 
@@ -213,12 +215,18 @@ def _retrieve_candidates(
     (missing key, HTTP/API error) so the user always gets results — the same
     reliability guarantee the ranker gives with its offline fallback. The returned
     source string records what actually served the request for the log.
+
+    Google candidates are **written through** into `restaurants` (see cache
+    .upsert_candidates) so they can be saved to lists/visits/notes, and their ids
+    are rewritten from place_id to the internal UUID before ranking.
     """
     if provider == "google":
         try:
-            return google_places.retrieve(_google_query(query, c), c), "google_places"
+            candidates = google_places.retrieve(_google_query(query, c), c)
         except google_places.GooglePlacesError as exc:
             return _sql_retrieve(db, c), f"seed (google fallback: {exc})"
+        candidates = cache.upsert_candidates(db, candidates, source=GOOGLE_SOURCE)
+        return candidates, GOOGLE_SOURCE
     return _sql_retrieve(db, c), "seed"
 
 

@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import models, schemas, services
+from .. import cache, models, schemas, services
 from ..deps import get_current_user, get_db
+from ..providers import google_places
 
 router = APIRouter(prefix="/restaurants", tags=["restaurants"])
 
@@ -131,6 +132,11 @@ def get_restaurant(restaurant_id: str, db: Session = Depends(get_db)):
     r = db.get(models.Restaurant, restaurant_id)
     if r is None:
         raise HTTPException(404, "Restaurant not found")
+    # Refresh-on-read: a live (Google) row past its TTL is refreshed via one lazy
+    # Place Details call — only here (single-place detail), never on browse/search,
+    # to keep it to one billable call per opened restaurant. Seed/fresh rows and
+    # any refresh failure serve straight from the cache (see cache.refresh_if_stale).
+    r = cache.refresh_if_stale(db, r, fetch=google_places.get_details)
     return r
 
 
