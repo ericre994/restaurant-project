@@ -218,6 +218,7 @@ class RecommendationResponse(BaseModel):
     recommendation_id: str                # post feedback against this (TDD §6)
     query: str
     mode: str                             # 'llm' | 'llm-repair' | 'fallback (...)'
+    retrieval: str                        # Stage-1 source: 'seed' | 'google_places' | 'seed (google fallback: ...)'
     candidate_count: int
     picks: List[RecommendationPick]
 

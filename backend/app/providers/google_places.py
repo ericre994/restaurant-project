@@ -24,10 +24,14 @@ circular radius is refined in Python with the prototype's ``haversine_km`` — t
 same coarse-filter-then-refine pattern ``_sql_retrieve`` uses for its geo bbox —
 because Text Search's location bias is a soft signal, not a hard cutoff.
 
-NOT wired into ``recommender.recommend`` yet: choosing Google vs the Yelp seed as
-the live source, and how/whether to cache Google content into the ``restaurants``
-table (Google ToS lets you store ``place_id`` indefinitely but restricts caching
-other content), is a separate decision — see the integration plan.
+Wired into ``recommender.recommend`` behind the ``RECS_PROVIDER`` toggle
+(``seed`` default | ``google``): ``recommender._retrieve_candidates`` calls this
+``retrieve`` when ``google`` is selected and falls back to the SQL/seed path on
+any ``GooglePlacesError`` so the user always gets results. Still open, and
+independent of the toggle: whether Google becomes the *default* live source, and
+how/whether to cache Google content into the ``restaurants`` table (Google ToS
+lets you store ``place_id`` indefinitely but restricts caching other content) —
+see the integration plan.
 
 Auth: reads ``GOOGLE_MAPS_API_KEY`` from the environment (loaded from
 ``backend/.env`` by ``app/__init__.py``). The key must be restricted to the

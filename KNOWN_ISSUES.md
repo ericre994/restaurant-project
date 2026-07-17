@@ -78,9 +78,13 @@ _(Three fix-now batches shipped 2026-07-14 — see **Done**. No open fix-now ite
 
 - [ ] **Production data provider** — Google Places vs. Yelp Fusion (coverage, ToS, unit
   economics). Blocks NYC data and production readiness. (decision) — PRD Q1, TDD §9
-  - [ ] _TODO (2026-07-15): research the **Google Maps / Places API** — costing structure
-    (pricing tiers, per-request cost, free credit, which SKUs we'd hit), API-key/account setup,
-    and integration approach; write up unit economics at expected request volume._
+  - [x] _Done (2026-07-15): researched the **Google Maps / Places API** — cost model (per-SKU
+    free tiers, ~$35/1k Text Search Enterprise, ≤20 candidates per billable call), Cloud
+    account + key setup, and integration approach. See the `google-maps-integration` memo._
+  - [x] _Done (2026-07-17): the Google Text Search provider is **wired into `recommend()`
+    behind a `RECS_PROVIDER` toggle** (`seed` default | `google`), with a seed-path fallback
+    on error. Both sources are now runnable; what remains is choosing the **default** live
+    source and reconciling Google's caching ToS with the restaurant cache._
   - _When this lands, remove the Yelp-seed-only hours workaround (grep `YELP_SEED_HOURS`
     in `app/static/index.html`): the seed encodes both "closed" and "open 24h" as
     `0:0-0:0`, disambiguated by a day-pattern heuristic; the new provider should carry

@@ -65,6 +65,7 @@ def create_recommendations(
         recommendation_id=log.id,
         query=payload.query,
         mode=result.mode,
+        retrieval=result.retrieval,
         candidate_count=result.candidate_count,
         picks=out_picks,
     )

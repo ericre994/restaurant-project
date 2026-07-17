@@ -16,6 +16,7 @@ these become a geography/GIST radius query and a pgvector pre-rank (TDD §4.1).
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from math import cos, radians
@@ -26,8 +27,14 @@ from sqlalchemy.orm import Session
 
 from . import models, schemas, taste
 from ._proto import proto
+from .providers import google_places
 
 LANDMARKS = proto.LANDMARKS
+
+#: Which Stage-1 source to retrieve from. "seed" = the Yelp seed in SQL
+#: (`_sql_retrieve`, the offline dev default); "google" = the live Google Places
+#: Text Search provider. Overridable per-process via the RECS_PROVIDER env var.
+DEFAULT_PROVIDER = "seed"
 
 
 @dataclass
@@ -37,6 +44,10 @@ class RecommendationResult:
     by_id: dict
     candidate_count: int
     profile: "proto.TasteProfile"
+    #: Which Stage-1 source actually produced the candidates: "seed",
+    #: "google_places", or a "seed (google fallback: ...)" string when Google was
+    #: requested but errored and the seed path served the request instead.
+    retrieval: str = "seed"
 
 
 def _to_seed_dict(r: models.Restaurant) -> dict:
@@ -172,6 +183,45 @@ def _sql_retrieve(db: Session, c: "proto.Constraints") -> list:
     return seed[:cap]
 
 
+def _resolve_provider(provider: Optional[str]) -> str:
+    """Explicit arg wins, else the RECS_PROVIDER env var, else the dev default."""
+    name = (provider or os.getenv("RECS_PROVIDER") or DEFAULT_PROVIDER).strip().lower()
+    return name or DEFAULT_PROVIDER
+
+
+def _google_query(query: str, c: "proto.Constraints") -> str:
+    """Fold structured cuisine keywords into the natural-language text query.
+
+    Google Text Search has no structured cuisine filter (see google_places
+    ._build_request_body), so cuisine must ride in the query text. Append only the
+    keywords not already present so we don't duplicate what the user typed.
+    """
+    q = query.strip()
+    lowered = q.lower()
+    extra = [k for k in (c.cuisine_keywords or []) if k.lower() not in lowered]
+    if extra:
+        q = (q + " " + " ".join(extra)).strip()
+    return q or "restaurant"
+
+
+def _retrieve_candidates(
+    db: Session, query: str, c: "proto.Constraints", provider: str
+) -> Tuple[list, str]:
+    """Dispatch Stage 1 to the configured source, returning (candidates, source).
+
+    The Google path falls back to the SQL/seed path on any GooglePlacesError
+    (missing key, HTTP/API error) so the user always gets results — the same
+    reliability guarantee the ranker gives with its offline fallback. The returned
+    source string records what actually served the request for the log.
+    """
+    if provider == "google":
+        try:
+            return google_places.retrieve(_google_query(query, c), c), "google_places"
+        except google_places.GooglePlacesError as exc:
+            return _sql_retrieve(db, c), f"seed (google fallback: {exc})"
+    return _sql_retrieve(db, c), "seed"
+
+
 def recommend(
     db: Session,
     user: models.User,
@@ -185,12 +235,18 @@ def recommend(
     cuisine: Optional[List[str]] = None,
     open_now: bool = False,
     party_size: int = 2,
+    provider: Optional[str] = None,
 ) -> RecommendationResult:
     """Run the pipeline and return the picks plus everything the log needs.
 
     `mode` is 'llm', 'llm-repair', or a 'heuristic (...)' string — the offline
     personalized ranker runs when no ANTHROPIC_API_KEY is set or the LLM
     call/parse fails (PRD reliability req).
+
+    Stage 1 retrieval source is chosen by `provider` (explicit arg, else the
+    RECS_PROVIDER env var, else the "seed" dev default); `result.retrieval`
+    records which source actually served the request. Stages 2-3 (rank/render)
+    reuse the prototype unchanged regardless of source.
     """
     coords = _resolve_location(db, near, lat, lng)
     constraints = proto.Constraints(
@@ -204,9 +260,9 @@ def recommend(
     )
     profile = load_taste_profile(db, user)
 
-    # Stage 1 retrieval runs in SQL (see _sql_retrieve); stages 2-3 reuse the
-    # prototype unchanged.
-    candidates = _sql_retrieve(db, constraints)
+    candidates, retrieval = _retrieve_candidates(
+        db, query, constraints, _resolve_provider(provider)
+    )
     compact = [proto.compact_candidate(r, constraints) for r in candidates]
     picks, mode = proto.rank(query, profile, compact, constraints)
     by_id = {r["id"]: r for r in candidates}
@@ -216,6 +272,7 @@ def recommend(
         by_id=by_id,
         candidate_count=len(candidates),
         profile=profile,
+        retrieval=retrieval,
     )
 
 
@@ -246,6 +303,7 @@ def persist_log(
         },
         "taste_snapshot": result.profile.compact(),
         "ranking_mode": result.mode,
+        "retrieval": result.retrieval,
     }
     log = models.RecommendationLog(
         user_id=user.id,

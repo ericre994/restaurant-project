@@ -1184,7 +1184,8 @@ function renderRecResults() {
     return;
   }
   el.innerHTML = `<p class="muted" style="margin:0 0 10px">Ranked ${res.picks.length} of ${res.candidate_count} ` +
-    `candidate${res.candidate_count === 1 ? "" : "s"} · mode: ${esc(res.mode)}</p>`;
+    `candidate${res.candidate_count === 1 ? "" : "s"} · mode: ${esc(res.mode)}` +
+    (res.retrieval ? ` · source: ${esc(res.retrieval)}` : "") + `</p>`;
   res.picks.forEach((p, i) => {
     const r = p.restaurant || {};
     if (r.id) state.detailCache[r.id] = r;
