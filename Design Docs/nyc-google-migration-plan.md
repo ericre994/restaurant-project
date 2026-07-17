@@ -57,9 +57,13 @@ still Content on the 30-day clock — only `place_id` is legally permanent.
 
 ---
 
-## Phase 0 — Schema: make `restaurants` a real TTL cache  *(foundation)*
+## Phase 0 — Schema: make `restaurants` a real TTL cache  *(foundation)* — ✅ DONE (2026-07-17)
 
 **Goal:** give the cache the columns the refresh-on-read model needs.
+
+*Shipped:* `Restaurant.expires_at` (indexed) + `raw` added to `models.py`;
+migration `d4e5f6a7b8c9` (round-trips up/down on SQLite via batch mode). Seed
+rows leave both null (never expire).
 
 - Add `expires_at: datetime | null` (drives refresh-on-read) and
   `raw: JSON | null` (retain the full Google payload) to `models.Restaurant`.
@@ -73,9 +77,18 @@ still Content on the 30-day clock — only `place_id` is legally permanent.
 
 ---
 
-## Phase 1 — Write-through on retrieval  *(the core — makes Google picks saveable)*
+## Phase 1 — Write-through on retrieval  *(the core — makes Google picks saveable)* — ✅ DONE (2026-07-17)
 
 **Goal:** a restaurant you search in NYC becomes a persisted, saveable row.
+
+*Shipped:* `app/cache.py::upsert_candidates` — insert-or-refresh each Google
+candidate by `(source='google_places', source_id=place_id)`, derive
+`latitude/longitude/categories_text`, retain `raw`, stamp `expires_at = now + TTL`
+(`RESTAURANT_CACHE_TTL_DAYS`, default 7), and **rewrite candidate `id`
+place_id → internal UUID**. Wired into `recommender._retrieve_candidates` (Google
+branch). Tests: `tests/test_write_through_cache.py` (+4) incl. an end-to-end proof
+that a Google pick is saveable to a list; suite 110 → 114. Autouse cleanup fixture
+in `conftest.py` keeps the shared test DB free of persisted `google_places` rows.
 
 - On a Google retrieval, **upsert** each candidate into `restaurants` by
   `(source='google_places', source_id=place_id)`: insert new rows (mint the

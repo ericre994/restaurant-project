@@ -209,6 +209,7 @@ def _map_place(place: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             "hours": _map_opening_hours(place.get("regularOpeningHours")),
         },
         "address": place.get("formattedAddress"),
+        "raw": place,  # full provider payload, retained for the write-through cache
     }
 
 

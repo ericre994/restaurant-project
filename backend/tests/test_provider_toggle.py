@@ -8,8 +8,9 @@ monkeypatching the provider's `retrieve`.
 """
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
-from app import recommender, schemas, services
+from app import models, recommender, schemas, services
 from app._proto import proto
 from app.db import SessionLocal
 from app.main import app
@@ -84,8 +85,20 @@ def test_google_provider_is_used_when_selected(db, user, monkeypatch):
     )
     assert result.retrieval == "google_places"
     assert result.candidate_count == 1
-    assert set(result.by_id) == {"g1"}
     assert captured["query"] == "ramen noodles"  # cuisine folded into the text query
+
+    # Write-through: the candidate id is rewritten from place_id -> internal UUID,
+    # and a persisted row now exists keyed by (source, source_id=place_id).
+    (rewritten_id,) = result.by_id
+    assert rewritten_id != "g1"
+    row = db.execute(
+        select(models.Restaurant).where(
+            models.Restaurant.source == "google_places",
+            models.Restaurant.source_id == "g1",
+        )
+    ).scalar_one()
+    assert row.id == rewritten_id
+    assert row.expires_at is not None  # TTL stamped
 
 
 def test_google_error_falls_back_to_seed(db, user, monkeypatch):
@@ -128,4 +141,6 @@ def test_endpoint_honors_recs_provider_env(monkeypatch):
     body = resp.json()
     assert body["retrieval"] == "google_places"
     assert body["candidate_count"] == 1
-    assert body["picks"][0]["restaurant_id"] == "g1"
+    # id is the internal UUID (write-through), not the raw place_id
+    assert body["picks"][0]["restaurant_id"] != "g1"
+    assert body["picks"][0]["restaurant"]["id"] == body["picks"][0]["restaurant_id"]
