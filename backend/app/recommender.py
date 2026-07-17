@@ -25,9 +25,9 @@ from typing import List, Optional, Tuple
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from . import cache, models, schemas, taste
+from . import cache, geo_nyc, models, schemas, taste
 from ._proto import proto
-from .providers import google_places
+from .providers import google_geocoding, google_places
 
 GOOGLE_SOURCE = cache.GOOGLE_SOURCE
 
@@ -107,21 +107,38 @@ def _geo_index(db: Session) -> "proto.GeoIndex":
     return _GEO_INDEX
 
 
+def _geocode_near(near: str) -> Optional[Tuple[float, float]]:
+    """Geocoding-API fallback; None (not an exception) when it can't resolve — a
+    missing key or API error just means we fall through to the guidance error."""
+    try:
+        return google_geocoding.geocode(near)
+    except google_geocoding.GeocodingError:
+        return None
+
+
 def _resolve_location(
     db: Session, near: Optional[str], lat: Optional[float], lng: Optional[float]
 ) -> Optional[Tuple[float, float]]:
+    """Resolve a search center, trying layers in order so both markets work:
+    explicit lat/lng -> the data-derived index (Philly seed neighborhoods/ZIPs,
+    plus any cached NYC ZIP centroids) -> curated NYC neighborhoods -> the
+    Geocoding API for arbitrary text. Raises ValueError with guidance if nothing
+    resolves."""
     if lat is not None and lng is not None:
         return (lat, lng)
-    if near:
-        index = _geo_index(db)
-        coords = index.resolve(near)
-        if coords is None:
-            raise ValueError(
-                f"unknown location '{near}'; use a ZIP code or a neighborhood: "
-                f"{', '.join(index.place_names)}"
-            )
-        return coords
-    return None
+    if not near:
+        return None
+
+    db_index = _geo_index(db)
+    for coords in (db_index.resolve(near), geo_nyc.INDEX.resolve(near), _geocode_near(near)):
+        if coords is not None:
+            return coords
+
+    known = sorted(set(db_index.place_names) | set(geo_nyc.INDEX.place_names))
+    raise ValueError(
+        f"unknown location '{near}'; use a ZIP code, lat/lng, or a neighborhood: "
+        f"{', '.join(known)}"
+    )
 
 
 def _sql_retrieve(db: Session, c: "proto.Constraints") -> list:

@@ -142,9 +142,19 @@ does not.
 
 ---
 
-## Phase 3 — NYC location resolution
+## Phase 3 — NYC location resolution — ✅ DONE (2026-07-17)
 
 **Goal:** `near=` works for NYC, not just Philadelphia.
+
+*Shipped:* `_resolve_location` is now layered — explicit lat/lng → the DB-derived
+index (Philly seed neighborhoods/ZIPs, plus any cached NYC ZIP centroids) →
+curated NYC neighborhoods (`app/geo_nyc.py`, ~55 neighborhood/borough centroids,
+reusing `proto.GeoIndex` for exact + fuzzy matching) → the Geocoding API
+(`app/providers/google_geocoding.py`, NYC-biased, one call on a cache/curated
+miss) → a guidance `ValueError`. Philly dev behavior is unchanged (DB index tried
+first). Tests: +12 (`test_geocoding.py` 6, `test_geo_nyc.py` 6); suite 124 → 136.
+Verified end-to-end: `williamsburg`/`astoria` resolve to NYC (200), `chinatown`/
+`19107` still resolve to Philadelphia, unknown 422s.
 
 - Replace/augment the Philly-seed `_geo_index` with: (a) the **Geocoding API**
   (already enabled) for arbitrary text → coords, and/or (b) a small curated **NYC
