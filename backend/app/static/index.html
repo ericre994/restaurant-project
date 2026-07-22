@@ -654,13 +654,13 @@ async function toggleWantToTry(restaurantId, name) {
   try {
     if (isSavedIn(restaurantId, "want_to_try")) {
       await api("DELETE", `/lists/${listId}/items/${restaurantId}`);
-      await loadCore(); render(); toast(`Removed “${name}” from Want to Try`);
+      await loadCore(); render(); refreshOpenDetail(restaurantId); toast(`Removed “${name}” from Want to Try`);
     } else {
       await api("POST", `/lists/${listId}/items`, { restaurant_id: restaurantId });
-      await loadCore(); render(); toast(`Saved “${name}” to Want to Try`);
+      await loadCore(); render(); refreshOpenDetail(restaurantId); toast(`Saved “${name}” to Want to Try`);
     }
   } catch (e) {
-    if (String(e.message).includes("already in this list")) { await loadCore(); render(); }
+    if (String(e.message).includes("already in this list")) { await loadCore(); render(); refreshOpenDetail(restaurantId); }
     else toast("Failed: " + e.message, true);
   }
 }
@@ -874,6 +874,12 @@ function renderDetail(r) {
   });
 }
 function closeDetail() { document.getElementById("detail-modal").classList.remove("show"); }
+// After a mutation that changes a restaurant's list membership, rebuild the open
+// detail modal so its buttons (e.g. the Want-to-Try toggle) reflect the new state.
+// render() only refreshes the background page, not the modal, so this is needed.
+function refreshOpenDetail(restaurantId) {
+  if (document.getElementById("detail-modal").classList.contains("show")) openDetail(restaurantId);
+}
 
 // ---- Router ----
 function render() {
