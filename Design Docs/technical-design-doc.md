@@ -266,9 +266,9 @@ PostgreSQL with pgvector for embeddings, geospatial types for location, and JSON
 | categories             | jsonb            |                           |
 | attributes             | jsonb            | hours, features, etc.     |
 | rating / rating_count  | numeric / int    |                           |
-| embedding              | vector(N)        | restaurant embedding      |
-| raw                    | jsonb            | raw provider payload      |
-| cached_at / expires_at | timestamptz      | TTL for refresh           |
+| embedding              | vector(N)        | restaurant embedding (still null — model/dim `N` unchosen) |
+| raw                    | jsonb            | *implemented* — raw provider payload; populated by the write-through cache (`app/cache.py`) on a Google write |
+| expires_at             | timestamptz      | *implemented* (indexed) — refresh-on-read TTL: `now + RESTAURANT_CACHE_TTL_DAYS` (default 7) on a Google write, refreshed via lazy Place Details on `GET /restaurants/{id}`; **null = never expires** (the static seed). The draft's separate `cached_at` was dropped — it's derivable as `expires_at − TTL` and the refresh-on-read model keys on `expires_at` alone. |
 | latitude / longitude   | double           | *(dev)* derived from `location`; B-tree indexed for the SQLite geo bounding-box query |
 | categories_text        | text             | *(dev)* lowercased, comma-joined categories for cuisine `LIKE` matching |
 |                        |                  | UNIQUE(source, source_id) |
